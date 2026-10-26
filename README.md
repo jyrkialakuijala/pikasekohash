@@ -12,7 +12,7 @@ vectors, and the security analysis made so far.
 Author: Jyrki Alakuijala (co-author of HighwayHash).
 
 <!-- CI badge placeholder; enable once a workflow exists:
-[![build](https://github.com/OWNER/pikasekohash-256/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/pikasekohash-256/actions)
+[![build](https://github.com/jyrkialakuijala/pikasekohash/actions/workflows/ci.yml/badge.svg)](https://github.com/jyrkialakuijala/pikasekohash/actions)
 -->
 
 ## Status: experimental, not for production cryptographic use
