@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Jyrki Alakuijala
+// SPDX-License-Identifier: MIT
 // PikasekoHash-256, AVX-512 implementation (AVX512F, AVX512BW, VAES).
 // The sixteen state registers live in zmm registers. Steps are written with a
 // compile-time phase so that strides, rotations and the step constant are immediates;

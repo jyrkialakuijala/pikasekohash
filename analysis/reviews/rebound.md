@@ -11,14 +11,15 @@ question: using all degrees of freedom of the unkeyed hash, can we build a colli
 collision, free-start collision, near-collision or distinguisher cheaper than generic, and over how many steps?
 
 Design analysed: the final design as implemented in the development source (6 final steps, FOLD 4). Tags:
-**measured** (run here on the real step, logs in this directory), **proven** (exact algebra or a closed solver
+**measured** (run here on the real step, logs in the development repository), **proven** (exact algebra or a closed solver
 run), **argued** (reasoning, no complete experiment).
 
 All scripts check themselves against the C reference: `pk.py` (step model, equal to
 the portable step function (`pikaseko256_steps` here) for t = 0..7) and `pkhash.py` (the whole unkeyed hash, equal to
 the portable unkeyed hash on 11 lengths from 0 to 520 bytes). `libpk.so` is the portable reference of the development code +
 `consts.c` built unchanged. Independent check after the review: all five `collision_t*.txt` pairs collide in
-one step on a fresh build of the current source.
+one step on a fresh build of the current source. In this repository they are
+`analysis/data/step_collision_t{1,3,5,7,9}.txt`, checked by `tools/verify_step_collisions.c` (`make test`).
 
 ## 0. Summary
 
@@ -212,6 +213,7 @@ Differences enter only feed registers 0, 5, 10, 15 after step t: one register pe
    constructions on any candidate.
 3. **Specification**: remove "finding one is a 1024-bit random-function collision"; state that one-step collisions
    are constructive in O(1), free-start collisions are practical, and security rests on the fixed IV and SFS.
+   (Done: SPEC.md, section 12, and ANALYSIS.md, sections 4 and 5.)
 4. **Tooling**: truncated byte models overestimate what exists here; confirm characteristics by exact GF(2^8)
    algebra (`sc_build.py`) or real pairs; use the pre-L reformulation (36 -> 57/76 proven).
 5. SFS margin is thinner than the diffusion numbers suggest (half-invertibility). Delayed products (operands read after step t+2) do not affect

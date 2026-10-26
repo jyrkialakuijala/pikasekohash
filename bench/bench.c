@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Jyrki Alakuijala
+// SPDX-License-Identifier: MIT
 // Throughput and latency of pikaseko256 (unkeyed and keyed). Results are only
 // meaningful on an idle machine with a fixed clock.
 #define _POSIX_C_SOURCE 200809L

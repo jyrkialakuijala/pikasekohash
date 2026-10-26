@@ -5,13 +5,13 @@ files there. Internal variant names are replaced by plain descriptions; FOLD 0 i
 previous finalization, FOLD 4 the nonlinear fold of the final design (SPEC.md, section 8), and FINAL n or
 B16_FINAL = n means n final steps. Technical content and numbers are unchanged. Function names such as
 `pikaseko64_portable*`, `InitSbox`, `InitRegs` and the header `pikaseko.h` are those of the development code. Findings 2,
-3 and 4 and the byte-order items of Task 4 are addressed in this repository (ANALYSIS.md, section 12); findings 1 and
-the streaming item are open.*
+3 and 4, the byte-order items and the `(NULL, 0)` item of Task 4 are addressed in this repository (ANALYSIS.md,
+section 12); finding 1 and the streaming item are open.*
 
 Viewpoint: hash-flooding and implementation-security practitioner (HashDoS against
 Murmur/City, seed-independent multicollisions, SMHasher, Ahle-style adversarial inputs,
 side channels and real-world misuse). Target: the final design (defaults of the development source: xor keys, step constant, 3 steps per absorption, products at delay 2,
-**6 final steps (B16_FINAL=6)**, nonlinear fold FOLD 4). All work in this directory;
+**6 final steps (B16_FINAL=6)**, nonlinear fold FOLD 4). All work in a separate directory of the development repository;
 no tracked source was modified; reduced builds are `-D` flag variants only.
 Shared machine, ≤4 threads; no cycle/ns numbers are used in any conclusion.
 
@@ -29,7 +29,7 @@ Build of record used for attacks:
 | 5 | keyed collisions | No seed-independent collision or seed-independent differential found. Every tested message difference is fully key-dependent (512/512 distinct output differences over 512 random keys, 0 collisions). Structural argument below: the key diffuses through step 0's AES before any packet, so no low-weight universal differential can exist. | holds (good) |
 | 6 | unkeyed reduced near-collisions | With the attacker's strongest single-bit control in the last packet, the output Hamming distance is indistinguishable from random even at **B16_FINAL=0**: mean 128.0, best min over 2^16 ≈ 86–89 vs a random-pair control min of 91–97. No constant output bits. Product steering adds no near-collision leverage. | holds (good) |
 | 7 | unkeyed reduced distinguisher | Corroborated the earlier review: a first-packet single-bit difference at an even last-group phase gives a weak per-bit bias at B16_FINAL=0/1 (worst |p−½| ≈ 0.003, ~3σ at 2^18), gone by the installed 6 finals. Distinguisher, not a collision. | informational |
-| 8 | statistics | The 256-bit battery (`--quick`) PASS at the installed 6 finals **and** at FINAL=1 and FINAL=2 (worst 32-bit collision z within ±3.2). The battery does not see the differential distinguisher of #7 — the sum fold hides it, as the designers note. | informational |
+| 8 | statistics | The 256-bit battery (`--quick`) PASS at the installed 6 finals **and** at FINAL=1 and FINAL=2 (worst 32-bit collision z within ±3.2). The battery does not see the differential distinguisher of #7 — the sum fold hides it, as the designer notes. | informational |
 
 No attack on the full hash. Nothing below is a break of the installed design.
 
@@ -65,7 +65,7 @@ Why this is structurally expected, and why the obvious levers fail:
   nonlinearised, an unkeyed collision does **not** transfer to any keyed instance.
 
 Practical reading for a hash table keyed with a secret: an attacker who does not know the key
-has no low-cost seed-independent multicollision. If the key leaks (see Tasks 3), flooding is
+has no low-cost seed-independent multicollision. If the key leaks (see Task 3), flooding is
 trivial (known 64-bit hash, 2^32 birthday) — so the key's secrecy is load-bearing, which makes
 findings #1–#4 the real hash-flooding risk, not the core.
 
@@ -122,7 +122,7 @@ Two concrete channels, both confirmed from source/disassembly:
    and taking the zero-key fast path is timing-distinguishable from a keyed hash. Across non-zero
    keys the path is identical, and the body (vaesenc/vpmuludq/vpxord/vpshufi) has
    operand-independent latency on Zen 5, so the AVX-512 keyed core is otherwise constant-time.
-   Combined with #1(Task 4): the all-zero key is both the timing-special case and the public
+   Combined with finding #1 (Task 4): the all-zero key is both the timing-special case and the public
    unkeyed hash. **Fix:** compute the IV unconditionally (xor the rotated key in with no branch;
    for the genuine unkeyed entry, gate only on the public `key==NULL`, not on key *value*).
 
@@ -159,9 +159,9 @@ emitted branch, which is sufficient to establish presence.
   schedule and injects the length only at Final.
 * **Portable vs AVX naming collision.** `pikaseko64` (AVX-512) and `pikaseko64_portable` differ
   by a suffix and are "bit-identical"; a user may pick the portable one for "portability" and
-  unknowingly take the non-constant-time path (Task 3 #1). No dispatch, no warning.
+  unknowingly take the non-constant-time path (finding #2). No dispatch, no warning.
 * **Formal UB on `(NULL, 0)`** in the reference (`memcpy(dst, NULL, 0)`), and the `InitSbox`
-  data race (Task 3 #4) — both only in the portable build.
+  data race (finding #4) — both only in the portable build.
 
 ## Task 5 — SMHasher-style sweep
 
@@ -179,19 +179,19 @@ reduced finals.
 | B16_FINAL=2 | PASS | −3.2 |
 
 All clean (`logs/battery_*.txt`). The battery passes even down to one final step, which is the
-designers' known point (the sum fold hides slow diffusion from statistical tests) — it is **not**
-a safety signal, because the differential distinguisher of Task 2/7 lives below the battery's
+designer's known point (the sum fold hides slow diffusion from statistical tests) — it is **not**
+a safety signal, because the differential distinguisher of Task 2 and finding #7 lives below the battery's
 resolution. Keep the margin from the targeted probes, not the battery.
 
 ## Prioritized fixes
 
-1. **Domain separation + kill the zero-key special case** (Tasks 4, 3#3): add a parameter/flag
+1. **Domain separation + kill the zero-key special case** (Task 4, finding #3): add a parameter/flag
    word to the IV so keyed-with-K=0 ≠ unkeyed; separate 64- vs 256-bit and any future XOF/tree
    outputs; reject or tag the all-zero key. Removes the single most dangerous deployment footgun.
-2. **Do not ship a table-S-box AES as a keyed path** (Task 3#1): constant-time portable AES, or
+2. **Do not ship a table-S-box AES as a keyed path** (finding #2): constant-time portable AES, or
    refuse `pikaseko64_portable*` with a non-NULL key, or runtime dispatch to a constant-time
-   fallback. Fix the `InitSbox` race (constant table or `call_once`) regardless (Task 3#4).
-3. **Remove the key-value branch** in `InitRegs`; gate only on `key==NULL` (Task 3#2).
+   fallback. Fix the `InitSbox` race (constant table or `call_once`) regardless (finding #4).
+3. **Remove the key-value branch** in `InitRegs`; gate only on `key==NULL` (finding #3).
 4. **Specify key packing and digest byte order; warn about little-endian-only and the absence of
    streaming** in `pikaseko.h` (Task 4).
 5. Keep **≥ the installed 6 final steps**; reduced finals leak to targeted differential probes

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Jyrki Alakuijala
+// SPDX-License-Identifier: MIT
 // Classic hash test battery for pikaseko256 (SMHasher-style, reduced sizes).
 // Each test prints one line; the last line is "VERDICT PASS" or "VERDICT FAIL <tests>".
 // Collision tests compare the number of duplicate values among n hashes, for
@@ -11,6 +13,9 @@
 #include <string.h>
 #include <time.h>
 #include "pikaseko256.h"
+#ifdef PIKASEKO256_NO_AVX512  // portable-only build: use the portable implementation
+#define pikaseko256 pikaseko256_portable
+#endif
 
 #define OB 256  // output bits
 typedef struct { uint64_t w[4]; } H256;

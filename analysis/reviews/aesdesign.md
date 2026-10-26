@@ -132,7 +132,7 @@ redesign it first (raise its 20 and 10 costs above 36 and 27, Feistel-placed pro
 
 1. The designer's cryptanalysis notes: replace "last step >= 21" with the composed bounds (>= 100 strict, >= 64 product-agnostic,
    >= 36 last step, >= 100 multi-absorption). The lemmas are short HiGHS solves (`lastgroup.py`,
-   `lcmodel.py --R 2 --noend`).
+   `lcmodel.py --R 2 --noend`). (Done: ANALYSIS.md, section 9.)
 2. Do not call the permutation-step variant "conservative" in trail terms: "invertible step, lower proven bounds".
 3. If the permutation-step variant is kept, Feistel-place the products or document that the absorption is not a bijection.
 4. Keep 6 final steps and FOLD 4 for the final design.

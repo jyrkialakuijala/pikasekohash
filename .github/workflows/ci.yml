@@ -1,0 +1,107 @@
+# Copyright (c) 2026 Jyrki Alakuijala
+# SPDX-License-Identifier: MIT
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WARN_CFLAGS: -O2 -std=c11 -Wall -Wextra -Wpedantic -Werror
+
+jobs:
+  x86-64:
+    name: x86-64 ${{ matrix.cc }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: CPU
+        run: |
+          $CC --version | head -n 1
+          grep -m1 'model name' /proc/cpuinfo
+          for f in avx512f avx512bw vaes; do grep -qw $f /proc/cpuinfo && echo "$f: yes" || echo "$f: no"; done
+      - name: make test (AVX-512 tests run only if the runner's CPU supports them)
+        run: make CFLAGS="$WARN_CFLAGS" test
+      - name: make test, portable path forced
+        run: PIKASEKO256_FORCE_PORTABLE=1 make CFLAGS="$WARN_CFLAGS" test
+      - name: make PORTABLE=1 test
+        run: make clean && make PORTABLE=1 CFLAGS="$WARN_CFLAGS" test
+      - name: CMake + ctest
+        run: |
+          cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/cmake -j "$(nproc)"
+          ctest --test-dir build/cmake --output-on-failure
+      - name: CMake + ctest, PIKASEKO256_AVX512=OFF
+        run: |
+          cmake -S . -B build/cmake-portable -DPIKASEKO256_AVX512=OFF
+          cmake --build build/cmake-portable -j "$(nproc)"
+          ctest --test-dir build/cmake-portable --output-on-failure
+
+  sanitizers:
+    name: ASan + UBSan (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+      SAN_CFLAGS: -O1 -g -std=c11 -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
+      SAN_LDFLAGS: -fsanitize=address,undefined
+    steps:
+      - uses: actions/checkout@v4
+      # The AVX-512 path is tested only when the runner's CPU supports it (detected at run time).
+      - name: make test
+        run: make CFLAGS="$SAN_CFLAGS" LDFLAGS="$SAN_LDFLAGS" test
+      - name: make test, portable path forced
+        run: PIKASEKO256_FORCE_PORTABLE=1 make CFLAGS="$SAN_CFLAGS" LDFLAGS="$SAN_LDFLAGS" test
+
+  arm64:
+    name: arm64 portable (${{ matrix.cc }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang if missing
+        if: matrix.cc == 'clang'
+        run: command -v clang || (sudo apt-get update && sudo apt-get install -y clang)
+      - name: make test (portable-only is the default on non-x86-64)
+        run: make PORTABLE=1 CFLAGS="$WARN_CFLAGS" test
+      - name: CMake + ctest
+        run: |
+          cmake -S . -B build/cmake
+          cmake --build build/cmake -j "$(nproc)"
+          ctest --test-dir build/cmake --output-on-failure
+
+  s390x:
+    name: s390x big-endian portable (qemu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compiler and qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-s390x-linux-gnu libc6-dev-s390x-cross qemu-user
+      - name: make test under qemu-s390x
+        run: >
+          make PORTABLE=1 CC=s390x-linux-gnu-gcc AR=s390x-linux-gnu-ar
+          CFLAGS="$WARN_CFLAGS" LDFLAGS=-static RUN=qemu-s390x test

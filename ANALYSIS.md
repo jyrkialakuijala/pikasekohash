@@ -10,8 +10,11 @@ Labels, as in the reviews:
 
 * **proven**: an exact argument, or a solver run that closed the gap in a
   stated model. A bound proven in a truncated model is a bound in that model.
-* **measured**: computed on the real function (logs and scripts in the
-  development repository; the one-step collisions are reproduced in this one).
+* **measured**: computed on the real function. Logs and scripts are in the
+  development repository, which is not part of this release. The diffusion
+  counts, the statistical battery and the one-step collisions can be
+  reproduced with this repository (`tools/`, `analysis/results/`,
+  `analysis/data/`).
 * **argued**: reasoning consistent with the measurements, no complete
   experiment.
 
@@ -86,12 +89,13 @@ follow: 8 steps in total.
 ## 2. Diffusion (measured)
 
 Bytes of the 1024-byte state that differ after n steps, starting from a
-one-bit state difference (`tools/diffusion.c`, all bit positions and phases):
+one-bit state difference (`tools/diffusion.c`, all 8192 bit positions, all
+four phases; output in `analysis/results/diffusion.txt`):
 
 | steps | 1 | 2 | 3 | 4 | 5 | 6 |
 |---|---:|---:|---:|---:|---:|---:|
-| mean | 28 | 219 | 891 | 1020 | 1020 | 1020 |
-| worst | 22 | 181 | 754 | 1010 | 1009 | 1010 |
+| mean | 28 | 220 | 891 | 1020 | 1020 | 1020 |
+| worst | 22 | 182 | 751 | 1009 | 1011 | 1011 |
 
 1020 of 1024 is the expected count for a random difference (each byte equal
 with probability 1/256). After three steps every register is reached from
@@ -108,7 +112,8 @@ GF(2) rank 2048 on the state.
 * The 256-bit battery (`tools/battery.c`: avalanche, bit independence,
   differential, sparse keys, cyclic, two-byte, window, permutation, seed and
   length tests, with Poisson tails for small expectations) passes for the
-  final design with 6, 2, 1 and 0 final steps.
+  final design with 6, 2, 1 and 0 final steps. The run of the final design
+  with `make battery` is in `analysis/results/battery.txt`.
 * On the previous finalization (same absorption, 4 final steps and a linear
   sum fold), structured-input histograms (2^34 inputs into 2^20 buckets),
   768 small bucket tests and neighbourhood context models put the hash
@@ -326,10 +331,12 @@ differential and no key-independent collision (measured).
   branches only on the length and on whether a key pointer is given. Its
   instructions (VAESENC, VPMULUDQ, VPXORQ, VPTERNLOGQ, VSHUFI64X2, VPADDQ,
   masked loads) have operand-independent latency on current x86 cores
-  (argued from public documentation). The portable implementation computes
-  the AES S-box arithmetically (inversion in GF(2^8) by a fixed addition
-  chain, without tables and without data-dependent branches), so it has no
-  table lookups indexed by secret data; whether a given compiler preserves
+  (argued from public documentation). The portable implementation is a bitsliced
+  AES (the Boyar-Peralta S-box circuit on 64-bit words, ShiftRows and
+  MixColumns as fixed shifts and masks), without tables and without
+  data-dependent branches, loop bounds or shift amounts, so it has no table
+  lookups indexed by secret data; it assumes a constant-time 32 x 32 -> 64-bit
+  multiply, as on current 64-bit CPUs. Whether a given compiler preserves
   this is not verified. There is no lazy initialization.
 * **Length is not hidden.** The running time depends on the message length.
 * **No domain separation.** The zero key, the NULL key and the unkeyed hash

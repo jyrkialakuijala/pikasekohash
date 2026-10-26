@@ -130,6 +130,7 @@ q = mul32(a, b) from the state after t+1, xored into r_g after t+2.
 4. Sharper multi-step bounds need a stronger solver (Gurobi, CP-SAT with symmetry breaking) on the TIGHT model or
    a super-box model.
 5. Record in the designer's cryptanalysis notes: the step has biased output combinations (non-surjectivity), costing >= 50 S-boxes.
+   (Done: ANALYSIS.md, section 10.)
 
 ## Files
 

@@ -1,0 +1,31 @@
+# https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{c,h}]
+indent_style = space
+indent_size = 2
+
+[{Makefile,*.mk}]
+indent_style = tab
+
+[CMakeLists.txt]
+indent_style = space
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Trailing double spaces can be a Markdown line break.
+trim_trailing_whitespace = false
+
+[*.txt]
+# Test vectors, analysis data and logs: compared byte for byte.
+trim_trailing_whitespace = false

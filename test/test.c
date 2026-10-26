@@ -1,10 +1,18 @@
+// Copyright (c) 2026 Jyrki Alakuijala
+// SPDX-License-Identifier: MIT
 // Tests: the built-in test vectors (test/test_vectors.txt) on both implementations, the
 // AVX-512 code against the portable code over many lengths, alignments and keys, the step
 // function, and NULL key = zero key.
+//
+// The AVX-512 tests run only when the CPU and OS support AVX512F, AVX512BW and VAES (and
+// the library was not built with PIKASEKO256_NO_AVX512); otherwise, or when the
+// environment variable PIKASEKO256_FORCE_PORTABLE=1 is set, only the portable tests run:
+// the vectors, the checksum, a reduced alignment and key sweep, and step consistency.
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "cpu.h"
 #include "pikaseko256.h"
 
 typedef struct { int keyed; size_t len; uint64_t h[4]; } Vector;
@@ -39,29 +47,12 @@ static const uint64_t kFoldAll = 0xc0fb62d98e9f3498ull;  // unkeyed, lengths 0..
 static uint64_t rng = 0x9E3779B97F4A7C15ull;
 static uint64_t Next(void) { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return rng; }
 
-int main(void) {
-  static uint8_t buf[4200 + 64];
-  int fails = 0;
-  for (int i = 0; i < 4200; i++) buf[i] = (uint8_t)i;
-  const uint64_t key18[8] = {1, 2, 3, 4, 5, 6, 7, 8}, zero[8] = {0};
-  for (size_t i = 0; i < sizeof kVectors / sizeof kVectors[0]; i++) {
-    const Vector* v = &kVectors[i];
-    uint64_t a[4], p[4];
-    pikaseko256(buf, v->len, v->keyed ? key18 : NULL, a);
-    pikaseko256_portable(buf, v->len, v->keyed ? key18 : NULL, p);
-    if (memcmp(a, v->h, 32)) { printf("FAIL vector %s len %zu (AVX-512)\n", v->keyed ? "keyed" : "unkeyed", v->len); fails++; }
-    if (memcmp(p, v->h, 32)) { printf("FAIL vector %s len %zu (portable)\n", v->keyed ? "keyed" : "unkeyed", v->len); fails++; }
-  }
-  uint64_t acc = 0, o[4];
-  for (size_t len = 0; len <= 2048; len++) {
-    pikaseko256_unkeyed(buf, len, o);
-    for (int i = 0; i < 4; i++) acc = acc * 0x9E3779B97F4A7C15ull ^ o[i];
-  }
-  if (acc != kFoldAll) { printf("FAIL checksum over lengths 0..2048\n"); fails++; }
-  printf("test vectors: %s\n", fails ? "FAIL" : "ok");
+typedef void HashFn(const void*, size_t, const uint64_t*, uint64_t*);
+typedef void UnkeyedFn(const void*, size_t, uint64_t*);
 
-  // AVX-512 against portable: random data, three keys, three alignments.
-  for (size_t i = 0; i < sizeof buf; i++) buf[i] = (uint8_t)Next();
+#ifndef PIKASEKO256_NO_AVX512
+// AVX-512 against portable: random data, three keys, three alignments. Returns mismatches.
+static long AvxVsPortable(const uint8_t* buf, const uint64_t* key18) {
   long n = 0, bad = 0;
   for (int kc = 0; kc < 3; kc++) {
     uint64_t key[8];
@@ -79,30 +70,127 @@ int main(void) {
       }
   }
   printf("AVX-512 vs portable: %ld inputs, %ld mismatches\n", n, bad);
-  fails += bad != 0;
+  return bad;
+}
+
+// Step function: AVX-512 against portable.
+static int StepsAvxVsPortable(void) {
+  int sb = 0;
+  for (int trial = 0; trial < 64; trial++) {
+    uint64_t s1[128], s2[128];
+    for (int i = 0; i < 128; i++) s1[i] = s2[i] = Next();
+    pikaseko256_steps(s1, (unsigned)trial % 11, 1 + trial % 6);
+    pikaseko256_steps_portable(s2, (unsigned)trial % 11, 1 + trial % 6);
+    sb += memcmp(s1, s2, sizeof s1) != 0;
+  }
+  printf("step function AVX-512 vs portable: %s\n", sb ? "FAIL" : "ok");
+  return sb != 0;
+}
+#endif
+
+// Portable only (reduced, the portable code is slow): the same input at other alignments
+// gives the same digest, and pikaseko64_portable is lane 0. Returns mismatches.
+static long PortableSweep(uint8_t* buf, const uint64_t* key18) {
+  long n = 0, bad = 0;
+  uint64_t key[8];
+  for (int i = 0; i < 8; i++) key[i] = Next();
+  for (int kc = 0; kc < 3; kc++) {
+    const uint64_t* kp = kc == 0 ? NULL : kc == 1 ? key18 : key;
+    for (size_t len = 0; len <= 1100; len += len < 140 ? 1 : len < 1000 ? 61 : 23) {
+      uint64_t p0[4];
+      pikaseko256_portable(buf, len, kp, p0);
+      for (int al = 1; al < 3; al++) {
+        uint64_t p[4];
+        uint8_t* d = buf + 2048 + (al == 1 ? 1 : 37);
+        memcpy(d, buf, len);
+        pikaseko256_portable(d, len, kp, p);
+        n++;
+        if (memcmp(p0, p, 32)) { if (bad < 5) printf("FAIL portable alignment: len %zu key %d align %d\n", len, kc, al); bad++; }
+      }
+      if (len % 8 == 0 && pikaseko64_portable(buf, len, kp) != p0[0]) bad++;
+    }
+  }
+  printf("portable alignment/key sweep: %ld inputs, %ld mismatches\n", n, bad);
+  return bad;
+}
+
+// Portable steps: n steps equal a steps then n - a steps, and zero steps change nothing.
+static int StepsPortableConsistency(void) {
+  int sb = 0;
+  for (int trial = 0; trial < 16; trial++) {
+    uint64_t s1[128], s2[128], s0[128];
+    for (int i = 0; i < 128; i++) s0[i] = s1[i] = s2[i] = Next();
+    const unsigned t0 = (unsigned)trial % 11, n = 2 + (unsigned)trial % 5, a = 1 + (unsigned)trial % (n - 1);
+    pikaseko256_steps_portable(s1, t0, n);
+    pikaseko256_steps_portable(s2, t0, a);
+    pikaseko256_steps_portable(s2, t0 + a, n - a);
+    sb += memcmp(s1, s2, sizeof s1) != 0 || !memcmp(s1, s0, sizeof s1);
+    pikaseko256_steps_portable(s2, t0, 0);
+    sb += memcmp(s1, s2, sizeof s1) != 0;
+  }
+  printf("step function portable consistency: %s\n", sb ? "FAIL" : "ok");
+  return sb != 0;
+}
+
+int main(void) {
+  static uint8_t buf[4200 + 64];
+  int fails = 0;
+  const int avx = PikasekoHaveAvx512();
+#ifdef PIKASEKO256_NO_AVX512
+  const char* why = "portable-only build";
+#else
+  const char* why = PikasekoForcePortable() ? "PIKASEKO256_FORCE_PORTABLE is set" : "CPU or OS lacks AVX512F/AVX512BW/VAES";
+#endif
+  if (!avx) printf("AVX-512 tests skipped (%s); running the portable tests only\n", why);
+  HashFn* hash = pikaseko256_portable;
+  UnkeyedFn* unkeyed = pikaseko256_unkeyed_portable;
+#ifndef PIKASEKO256_NO_AVX512
+  if (avx) { hash = pikaseko256; unkeyed = pikaseko256_unkeyed; }
+#endif
+  for (int i = 0; i < 4200; i++) buf[i] = (uint8_t)i;
+  const uint64_t key18[8] = {1, 2, 3, 4, 5, 6, 7, 8}, zero[8] = {0};
+  for (size_t i = 0; i < sizeof kVectors / sizeof kVectors[0]; i++) {
+    const Vector* v = &kVectors[i];
+    uint64_t a[4], p[4];
+    if (avx) {
+      hash(buf, v->len, v->keyed ? key18 : NULL, a);
+      if (memcmp(a, v->h, 32)) { printf("FAIL vector %s len %zu (AVX-512)\n", v->keyed ? "keyed" : "unkeyed", v->len); fails++; }
+    }
+    pikaseko256_portable(buf, v->len, v->keyed ? key18 : NULL, p);
+    if (memcmp(p, v->h, 32)) { printf("FAIL vector %s len %zu (portable)\n", v->keyed ? "keyed" : "unkeyed", v->len); fails++; }
+  }
+  uint64_t acc = 0, o[4];
+  for (size_t len = 0; len <= 2048; len++) {
+    unkeyed(buf, len, o);
+    for (int i = 0; i < 4; i++) acc = acc * 0x9E3779B97F4A7C15ull ^ o[i];
+  }
+  if (acc != kFoldAll) { printf("FAIL checksum over lengths 0..2048 (%s)\n", avx ? "AVX-512" : "portable"); fails++; }
+  printf("test vectors (%s): %s\n", avx ? "AVX-512 and portable" : "portable", fails ? "FAIL" : "ok");
+
+  for (size_t i = 0; i < sizeof buf; i++) buf[i] = (uint8_t)Next();
+#ifndef PIKASEKO256_NO_AVX512
+  if (avx) fails += AvxVsPortable(buf, key18) != 0;
+#endif
+  if (!avx) fails += PortableSweep(buf, key18) != 0;
 
   // NULL key equals the zero key; unkeyed equals both.
   {
     uint64_t a[4], b[4], c[4];
-    pikaseko256(buf, 100, NULL, a); pikaseko256(buf, 100, zero, b); pikaseko256_unkeyed(buf, 100, c);
-    const int ok = !memcmp(a, b, 32) && !memcmp(a, c, 32);
+    hash(buf, 100, NULL, a); hash(buf, 100, zero, b); unkeyed(buf, 100, c);
+    int ok = !memcmp(a, b, 32) && !memcmp(a, c, 32);
+    if (avx) {
+      pikaseko256_portable(buf, 100, NULL, a); pikaseko256_portable(buf, 100, zero, b); pikaseko256_unkeyed_portable(buf, 100, c);
+      ok &= !memcmp(a, b, 32) && !memcmp(a, c, 32);
+    }
     printf("NULL key = zero key = unkeyed: %s\n", ok ? "ok" : "FAIL");
     fails += !ok;
   }
 
-  // Step function: AVX-512 against portable.
-  {
-    int sb = 0;
-    for (int trial = 0; trial < 64; trial++) {
-      uint64_t s1[128], s2[128];
-      for (int i = 0; i < 128; i++) s1[i] = s2[i] = Next();
-      pikaseko256_steps(s1, (unsigned)trial % 11, 1 + trial % 6);
-      pikaseko256_steps_portable(s2, (unsigned)trial % 11, 1 + trial % 6);
-      sb += memcmp(s1, s2, sizeof s1) != 0;
-    }
-    printf("step function AVX-512 vs portable: %s\n", sb ? "FAIL" : "ok");
-    fails += sb != 0;
-  }
+#ifndef PIKASEKO256_NO_AVX512
+  if (avx) fails += StepsAvxVsPortable();
+#endif
+  fails += StepsPortableConsistency();
+  if (!avx) printf("(AVX-512 tests were skipped)\n");
   printf("%s\n", fails ? "SOME TESTS FAILED" : "ALL OK");
   return fails != 0;
 }

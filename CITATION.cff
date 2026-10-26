@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use or analyse PikasekoHash-256, please cite it as below."
+title: "PikasekoHash-256: an experimental 256-bit AES-round hash for AVX-512 and VAES"
+type: software
+authors:
+  - family-names: Alakuijala
+    given-names: Jyrki
+version: 0.0.1
+date-released: 2026-10-26
+license: MIT
+# repository-code: https://github.com/OWNER/pikasekohash-256
+keywords:
+  - hash function
+  - AES
+  - AVX-512
+  - VAES
+  - cryptanalysis

@@ -3,7 +3,11 @@
 Five reviews of the final design of PikasekoHash-256 version 0 (as defined in
 [SPEC.md](../../SPEC.md)), made in October 2026. Each looks at the design
 from one tradition of cryptanalysis. Scripts and logs named in the reports
-are in the development repository unless stated otherwise. The consolidated
+are in the development repository, which is not part of this release, unless
+stated otherwise. The reports can be read without them; the results that can
+be checked with this repository are the one-step collision pairs
+(`analysis/data/`, `tools/verify_step_collisions.c`), the statistical
+battery (`tools/battery.c`) and the diffusion counts (`tools/diffusion.c`). The consolidated
 reading is [ANALYSIS.md](../../ANALYSIS.md).
 
 | report | viewpoint |

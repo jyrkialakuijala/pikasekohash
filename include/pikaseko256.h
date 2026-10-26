@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Jyrki Alakuijala
+// SPDX-License-Identifier: MIT
 // PikasekoHash-256: a 256-bit hash for AVX-512 + VAES, with a portable C reference.
 // Experimental. See README.md, SPEC.md and ANALYSIS.md.
 #ifndef PIKASEKO256_H_

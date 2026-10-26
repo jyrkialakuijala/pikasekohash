@@ -1,0 +1,15 @@
+# Normalize line endings in the repository.
+* text=auto
+
+# Source and build files.
+*.c text eol=lf
+*.h text eol=lf
+Makefile text eol=lf
+CMakeLists.txt text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.cff text eol=lf
+
+# Test vectors, analysis data and results are compared byte for byte
+# (make test diffs test/test_vectors.txt): always LF.
+*.txt text eol=lf

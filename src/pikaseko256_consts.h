@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Jyrki Alakuijala
+// SPDX-License-Identifier: MIT
 // Constants of PikasekoHash-256 (SPEC.md, "Constants").
 #ifndef PIKASEKO256_CONSTS_H_
 #define PIKASEKO256_CONSTS_H_
