@@ -1,0 +1,23 @@
+avalanche  9 configs x 256 bits: 0 suspicious, worst max|bias| / ideal = 0.97
+bic        len=8    trials=4000 max|corr|=0.0860 (in 15, out 58,74) ideal max ~0.0853
+bic        len=64   trials=2000 max|corr|=0.1200 (in 323, out 62,179) ideal max ~0.1290
+diff       len=8    diffs=464 trials=500 collisions=0 max|bias|=0.0960 ideal max ~0.1081
+diff       len=32   diffs=1056 trials=400 collisions=0 max|bias|=0.1125 ideal max ~0.1250
+diff       len=128  diffs=2024 trials=200 collisions=0 max|bias|=0.1600 ideal max ~0.1814
+sparse32/3  n=2796417   dups64(all words)=0   worst 32-bit z  -1.5 (word 2 bits 32..) expect 910 +- 30
+sparse128/2 n=524801    dups64(all words)=0   worst 32-bit z  +1.6 (word 3 bits 0..) expect 32 +- 6
+sparse1024/1 n=8193      dups64(all words)=0   worst 32-bit slice: 0 dups (word 0 bits 0..) expect 0.008, tail p 1
+cyclic8x8   n=2097152   dups64(all words)=0   worst 32-bit z  +0.7 (word 0 bits 0..) expect 512 +- 23
+cyclic16x4  n=2097152   dups64(all words)=0   worst 32-bit z  +1.6 (word 2 bits 32..) expect 512 +- 23
+cyclic3x20  n=2097152   dups64(all words)=0   worst 32-bit z  -1.8 (word 1 bits 32..) expect 512 +- 23
+twobytes8   n=1822741   dups64(all words)=0   worst 32-bit z  -2.3 (word 0 bits 32..) expect 387 +- 20
+twobytes16  n=7807081   dups64(all words)=0   worst 32-bit z  -2.1 (word 0 bits 0..) expect 7091 +- 84
+twobytes24  n=17953021  dups64(all words)=0   worst 32-bit z  +1.5 (word 1 bits 32..) expect 37470 +- 194
+window     len=32   bits=20 worst z  -2.6 (pos 64, out bits 32..) expect 128 +- 11
+window     len=72   bits=20 worst z  -3.2 (pos 328, out bits 32..) expect 128 +- 11
+perm        n=5764801   dups64(all words)=0   worst 32-bit z  +2.0 (word 0 bits 0..) expect 3867 +- 62
+seedctr     n=4194304   dups64(all words)=0   worst 32-bit z  +2.2 (word 1 bits 32..) expect 2047 +- 45
+seedsparse  n=131329    dups64(all words)=0   worst 32-bit slice: 5 dups (word 1 bits 32..) expect 2.008, tail p 0.053
+lengths    zero inputs 0..4096: 0 dups (word 0); extension collisions 0
+worst 32-bit collision z -3.2; 151 s
+VERDICT PASS
