@@ -159,6 +159,8 @@ AVX-512 implementation built with gcc 15 (`make bench`). A key adds about 2 ns.
 In bulk the loop takes about 14.5 core cycles per 64 bytes; it is bound by the
 two AES pipes (96 AES rounds per 256 bytes at two per cycle is 48 of its about
 58 cycles). Timings vary by a few percent between runs.
+With clang 21 the AVX-512 code is about 10% slower on short inputs (40 ns at
+8 bytes) and 23.7 GB/s in bulk; gcc is recommended for it.
 
 Every message costs at least 9 steps (288 AES rounds on 512-bit vectors),
 which sets the latency floor for short inputs.
@@ -166,7 +168,8 @@ which sets the latency floor for short inputs.
 The portable implementation uses a bitsliced AES (constant time, no tables,
 no intrinsics). On the same machine (gcc -O2, `make bench-portable`) it takes
 about 6 µs per short message, 15 µs for 1 KiB and runs at about 118 MB/s in
-bulk, roughly 200 times slower than the AVX-512 code.
+bulk, roughly 200 times slower than the AVX-512 code. With clang 21 it is about 10% faster
+(5.8 µs per short message, 129 MB/s).
 
 ## Test vectors
 
