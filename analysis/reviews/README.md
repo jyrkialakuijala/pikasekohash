@@ -39,6 +39,5 @@ rebound.md); three steps per absorption equal the full-diffusion depth, so
 the margin per absorption is thin; the linear fold left an exact zero-sum on
 output bit 0 after one final step, and output distinguishers reached 3 of
 the 6 steps after the last injection; and there was no domain separation.
-It also found that the specification of that time named the wrong
-multiplicand registers. These findings led to the six final steps and the
+These findings led to the six final steps and the
 nonlinear fold of the final design, which the five reports here examine.

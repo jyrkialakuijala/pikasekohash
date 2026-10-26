@@ -166,9 +166,8 @@ step give the same 256-bit digest after the six final steps and the fold
 colliding chaining values are not shown to be reachable from the initial
 value, so this is not a collision of the hash.
 
-An earlier version of the specification stated that finding a collision
-inside a step was as hard as a 1024-bit random-function collision. That
-statement was wrong. In the tradition of the SHA-3 competition this is a
+Finding a collision of one step is therefore not a generic 1024-bit
+random-function collision problem. In the tradition of the SHA-3 competition this is a
 serious certificational weakness: no argument may rest on collision
 resistance of the compression function, and no permutation-based (sponge)
 proof applies. The collision resistance of the hash rests on the fixed

@@ -224,9 +224,9 @@ and the 2048 single-bit packet differences of one absorption have full rank
 
 Because a register's keys depend on registers that the same step
 overwrites, the step is not a permutation; scaled-down models of the group
-map behave like a random function (image fraction 0.632, measured). An earlier version of this
-paper argued that finding a collision of one step is as hard as a generic
-collision on a 1024-bit random function. That is wrong.
+map behave like a random function (image fraction 0.632, measured). Finding
+a collision of one step is nevertheless far easier than a generic collision
+on a 1024-bit random function.
 
 **One-step collisions (measured).** Two states that differ in 54 bytes of
 the four registers of one group give identical outputs of one step. The

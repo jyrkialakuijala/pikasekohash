@@ -126,8 +126,7 @@ Result (`sc90_t1_g1_s1.log`, `sc90_more.log`, `sc90_t3_g0.log`, `collision_*.txt
 constant), 5, 7, 9; inputs differ in 54 bytes, C step outputs equal, first attempt each time. One solution
 leaves about 2^7000 more for free.
 
-This refutes the statement in the specification of that time that finding a collision inside a step "is a 1024-bit random-function
-collision".
+So finding a collision inside a step is not a 1024-bit random-function collision problem.
 
 ### 2.4 Even steps and the 78-S-box family (argued)
 
@@ -211,8 +210,8 @@ Differences enter only feed registers 0, 5, 10, 15 after step t: one register pe
 2. Otherwise break the features the construction uses: the free linear middle-key handles (rotated or
    S-box-processed K1) and the kk = k ⊕ k2 sharing; the "noself" key map of the earlier review (Rijndael viewpoint). Re-run `sc90.py`-style
    constructions on any candidate.
-3. **Specification**: remove "finding one is a 1024-bit random-function collision"; state that one-step collisions
-   are constructive in O(1), free-start collisions are practical, and security rests on the fixed IV and SFS.
+3. **Specification**: state that one-step collisions are constructive in O(1), free-start collisions are
+   practical, and security rests on the fixed IV and SFS.
    (Done: SPEC.md, section 12, and ANALYSIS.md, sections 4 and 5.)
 4. **Tooling**: truncated byte models overestimate what exists here; confirm characteristics by exact GF(2^8)
    algebra (`sc_build.py`) or real pairs; use the pre-L reformulation (36 -> 57/76 proven).
