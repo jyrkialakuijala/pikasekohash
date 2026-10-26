@@ -21,6 +21,7 @@ jobs:
   x86-64:
     name: x86-64 ${{ matrix.cc }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +55,7 @@ jobs:
   sanitizers:
     name: ASan + UBSan (${{ matrix.cc }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -73,6 +75,7 @@ jobs:
   arm64:
     name: arm64 portable (${{ matrix.cc }})
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -95,6 +98,7 @@ jobs:
   s390x:
     name: s390x big-endian portable (qemu)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install cross compiler and qemu
