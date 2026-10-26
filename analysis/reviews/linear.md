@@ -29,7 +29,7 @@ t = 0, 1, 2, 3, 5.
 | R2 | related-key internal collision, first absorption, feeds free | >= 56; full MILP bound 14, best 836 | proven / measured |
 | P | products | mask through bit i: corr <= 2^-1 (bit 0), 2^-3 (bits 3-4), 2^-6.1 (bit 9); degree of bits 0..9 = 2, 2, 4, 5, 6, 7, 8, 10, 12, 14 | measured (exhaustive) |
 
-Margin: a 2^256-data linear distinguisher on one trail needs > 43 active S-boxes; six final steps give 55, four
+Margin: a 2^256-data linear distinguisher on one trail needs > 42 active S-boxes (corrected when editing: 2^-6B > 2^-256 only while B <= 42; the original said > 43); six final steps give 55, four
 would give 40. The cube tester covers 2 of 8 post-injection steps (linear fold: 3). Related keys > 2^256 at step 0.
 
 ## 1. Linear trails

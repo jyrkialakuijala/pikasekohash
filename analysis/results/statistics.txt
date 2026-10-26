@@ -1,0 +1,13 @@
+Structured-input pictures, 2^34 inputs into 2^20 buckets (20 output bits), final design:
+mode A: std ratio 1.0007  min -4.8 sd  max +4.7 sd  (mean 16384.0, min 15764, max 16988)
+mode B: std ratio 1.0001  min -5.0 sd  max +4.6 sd  (mean 16384.0, min 15747, max 16970)
+
+768 histogram tests (2^24 inputs into 2^16 buckets), final design:
+min: mean 190.29 (exp 190.34, z -0.4) abs 172 (P over all tests 0.54) | max: mean 327.49 (exp 327.50, z -0.0) abs 353 (P over all tests 0.25) | bucket chi p: KS 0.020 (p 0.90), extreme 2 | count-dist p: KS 0.038 (p 0.21), extreme 1 | pooled count-dist chi 164 df 153 (p 0.254)
+
+Reference hashes, mode A pictures (same tool): SHA-256 0.9992 (-5.2, +4.9), BLAKE3 1.0004 (-4.8, +4.8),
+HighwayHash 0.9998 (-4.9, +4.9), xxh3 0.9991 (-5.2, +5.1).
+
+Speed at 16 KiB (one Zen 5 core, warm cache, same harness for all): PikasekoHash-256 23.5 GB/s,
+HighwayHash-256 13.6, BLAKE3 (official C, AVX-512, one thread) 11.8, SHA-256 (OpenSSL, SHA-NI) 2.8,
+xxh3-64 109.3, rapidhash 60.9.

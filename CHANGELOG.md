@@ -5,7 +5,8 @@ changes the output of the function changes the test vectors.
 
 ## Unreleased
 
-Nothing yet.
+* Paper (paper/pikasekohash.md) describing the design and its analysis.
+* Statistical results of the final design in analysis/results/statistics.txt.
 
 ## 0.0.1 (version 0) - 2026-10-26
 

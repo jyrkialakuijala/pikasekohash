@@ -44,8 +44,9 @@ follow: 8 steps in total.
 
 ## 1. Design rationale
 
-* **Issue rate, not latency, sets the budget.** On Zen 5 the bulk loop runs
-  about 3.3 vector instructions per cycle and is bound by the two AES pipes.
+* **Throughput, not latency, sets the budget.** On Zen 5 the bulk loop is
+  bound by the two AES pipes: the 96 AES rounds per 256 bytes need 48 of its
+  about 58 cycles, and the block shuffles and multiplies share one of them.
   A step is 32 AES rounds on 512-bit registers, 12 xors and 8 block
   rotations. Sixteen independent AES chains per step hide the 4-cycle AES
   latency; smaller states (eight or four registers) were measured
@@ -74,15 +75,18 @@ follow: 8 steps in total.
 * **Feeds.** Packets enter r0, r5, r10, r15. This set meets every group of
   every stride exactly once, so no two packets share a pair or a group in
   any step, and no key ever contains two packets. Every injection is
-  followed by three steps, the full-diffusion depth (section 2).
+  followed by three steps, the depth at which a one-bit difference reaches
+  every register (section 2).
 * **Products.** One 32 x 32 -> 64-bit product per packet, from the feed
   register and its neighbour f ^ 1 after the step that follows the
   injection, xored into r3, r6, r9 or r12 after one more step. Both operands
   are AES outputs, never raw input. With a secret key they add integer
   non-linearity outside the AES algebra. Unkeyed, they can be steered
   (section 7).
-* **Finalization.** Six steps after the last absorption (two full-diffusion
-  lengths beyond its two remaining steps), then a fold through two AES rounds.
+* **Finalization.** Six steps after the last absorption, then a fold through
+  two AES rounds. With the two remaining steps of the last absorption, the
+  last packets are followed by eight steps, twice the four steps a one-bit
+  difference needs to reach 99% of the state bytes (section 2).
   A linear sum fold, as in the previous finalization, left an exact zero-sum
   on output bit 0 after one final step.
 
@@ -114,11 +118,14 @@ GF(2) rank 2048 on the state.
   length tests, with Poisson tails for small expectations) passes for the
   final design with 6, 2, 1 and 0 final steps. The run of the final design
   with `make battery` is in `analysis/results/battery.txt`.
-* On the previous finalization (same absorption, 4 final steps and a linear
-  sum fold), structured-input histograms (2^34 inputs into 2^20 buckets),
-  768 small bucket tests and neighbourhood context models put the hash
-  inside the random null, alongside HighwayHash, xxh3, rapidhash, SHA-256 and
-  BLAKE3 measured the same way.
+* Structured-input histograms of the final design (2^34 inputs into 2^20
+  buckets, two input layouts) and 768 small bucket tests (2^24 inputs into
+  2^16 buckets) put the hash inside the random null; SHA-256, BLAKE3,
+  HighwayHash and xxh3 measured with the same histogram tool look the same.
+  The numbers are in `analysis/results/statistics.txt`. Neighbourhood
+  context models of the pictures, run on the previous finalization (same
+  absorption, 4 final steps and a linear sum fold) alongside SHA-256, BLAKE3,
+  HighwayHash, xxh3 and rapidhash, found no reproducible deviation.
 
 These results do not measure security. The battery passes at 0 final steps,
 where four messages distinguish the output (section 6). Margins below come
@@ -128,7 +135,8 @@ from targeted analysis, not from the battery.
 
 The step maps the state to itself but is not a permutation: the round keys
 of a register depend on the other registers that the same step overwrites.
-In image-size experiments it behaves like a random function (image fraction
+In image-size experiments on scaled-down models of the group map (small
+S-boxes and blocks) it behaves like a random function (image fraction
 0.632, measured), and the linear skeleton of a group has rank 1920-2016 of
 2048 (measured).
 
@@ -289,8 +297,9 @@ at most 2^-3 per S-box):
 | two steps, all masks nonzero | >= 15 (phases 1, 3; phase 0 not completed) |
 | last injection to output (2 + 6 steps + fold) | >= 55, single-trail correlation <= 2^-165 |
 
-A 2^256-data linear distinguisher on one trail needs more than 43 active
-S-boxes. Six final steps give 55; four would give 40.
+A linear distinguisher on one trail that needs at most 2^256 data must
+have fewer than 43 active S-boxes (correlation 2^-3B, data 2^6B), so 43
+active S-boxes suffice against it. Six final steps give 55; four would give 40.
 
 The products: output bit i of a product depends on operand bits 0..i, with
 best |correlation| from 2^-1 (bit 0) to 2^-6.1 (bit 9) (measured,

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Diffusion of the step: flip one bit of a random state and count, after 1..N steps,
 // how many of the 1024 state bytes differ (mean and worst over the 8192 bit positions,
-// a few random states each, all four step phases). Random ceiling: 1024 * 255/256 = 1020.
+// a fresh random state for each, all four step phases). Random ceiling: 1024 * 255/256 = 1020.
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -3,7 +3,7 @@
 PikasekoHash-256 is an experimental 256-bit hash function built from AES
 rounds over a wide state of sixteen 512-bit registers (8192 bits). It is
 designed for CPUs with AVX-512 and VAES (AMD Zen 4 and Zen 5, Intel Ice Lake
-and later), where it hashes about 24 GB/s on one core and a short message
+and later); on one Zen 5 core it hashes about 24 GB/s and a short message
 in about 36 ns. It can be used keyed (512-bit key) or unkeyed.
 A portable C implementation gives bit-identical results on any platform.
 This repository holds the specification, both implementations, test
@@ -11,7 +11,7 @@ vectors, and the security analysis made so far.
 
 Author: Jyrki Alakuijala (co-author of HighwayHash).
 
-<!-- CI badge placeholder; enable once a workflow exists:
+<!-- CI badge placeholder; enable once the workflow in .github/workflows/ has run on GitHub:
 [![build](https://github.com/jyrkialakuijala/pikasekohash/actions/workflows/ci.yml/badge.svg)](https://github.com/jyrkialakuijala/pikasekohash/actions)
 -->
 
@@ -189,7 +189,8 @@ of four (with a stride that cycles 1, 2, 4, 8). Each register gets two AES
 rounds whose round keys are xors of other registers of its group; the
 second key is rotated by one or two blocks, which carries data between
 blocks. One group also takes a constant derived from pi. A one-bit
-difference reaches the whole state after three steps. The message is cut
+difference reaches every register after three steps and practically every
+byte of the state after four. The message is cut
 into 64-byte packets with Merkle-Damgard strengthening. Four packets are
 added into four registers every three steps. One step later, each packet
 register is multiplied (32 x 32 -> 64 bits per lane) with a neighbouring
@@ -205,16 +206,13 @@ The full definition is in [SPEC.md](SPEC.md).
 * [SPEC.md](SPEC.md): the complete definition and test vectors.
 * [ANALYSIS.md](ANALYSIS.md): security and quality analysis, open problems
   and planned changes.
+* [paper/pikasekohash.md](paper/pikasekohash.md): a paper describing the
+  design, its rationale, the security analysis and measurements.
 * [analysis/reviews/](analysis/reviews/): five review reports on the design.
 * [SECURITY.md](SECURITY.md): reporting attacks and implementation issues.
 * [CONTRIBUTING.md](CONTRIBUTING.md): building, testing and changing the
   function.
 * [CHANGELOG.md](CHANGELOG.md): release history.
-
-## Acknowledgements
-
-The 32 x 32 -> 64-bit multiplications of state lanes come from HighwayHash,
-whose zipper merge also shaped early versions of this design.
 
 ## License
 
