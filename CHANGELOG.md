@@ -21,6 +21,10 @@ changes the output of the function changes the test vectors.
 * AVX2 + VAES and AES-NI implementations (`src/pikaseko256_simd.h`), chosen
   by the dispatch on x86-64 CPUs without AVX-512; `pikaseko256_implementation()`
   names the choice; `bench --impl` measures any of them.
+* ARMv8 (AArch64, little-endian) implementation with AESE/AESMC, chosen by the
+  dispatch when the CPU has the AES extension. The build flag for portable-only
+  builds is now `PIKASEKO256_PORTABLE_ONLY` (the old `PIKASEKO256_NO_AVX512` is
+  still accepted); the CMake option is `PIKASEKO256_SIMD`.
 * `pikaseko256_key_from_bytes` and `pikaseko256_digest_to_bytes`: byte forms
   of the key and the digest, independent of the host byte order.
 

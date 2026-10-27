@@ -1,21 +1,22 @@
 // Copyright (c) 2026 Jyrki Alakuijala
 // SPDX-License-Identifier: MIT
-// PikasekoHash-256: the dispatching entry points. On x86-64 they call the fastest
-// implementation the CPU and OS support: AVX-512 + VAES, AVX2 + VAES, AES-NI, else the
-// portable one. The check runs once and its result is cached.
+// PikasekoHash-256: the dispatching entry points. They call the fastest implementation the
+// CPU and OS support: on x86-64 AVX-512 + VAES, AVX2 + VAES or AES-NI, on AArch64 the ARMv8
+// AES instructions, else the portable one. The check runs once and its result is cached.
 #include <stdlib.h>
 
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
 #include "pikaseko256_impl.h"
 
-#if !defined(PIKASEKO256_NO_AVX512) && (defined(__x86_64__) || defined(_M_X64))
-#define PIKASEKO_DISPATCH 1
-#else
-#define PIKASEKO_DISPATCH 0
+#if defined(PIKASEKO256_HAVE_X86) || defined(PIKASEKO256_HAVE_NEON)
+static int ForcePortable(void) {
+  const char* e = getenv("PIKASEKO256_FORCE_PORTABLE");
+  return e && *e && !(e[0] == '0' && e[1] == 0);
+}
 #endif
 
-#if PIKASEKO_DISPATCH
+#if defined(PIKASEKO256_HAVE_X86)
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
 static void Cpuid(unsigned leaf, unsigned sub, unsigned r[4]) {
@@ -34,10 +35,9 @@ static unsigned long long Xcr0(void) {
 }
 #endif
 
-// Implementation levels: 3 AVX-512 + VAES, 2 AVX2 + VAES, 1 AES-NI, 0 portable.
+// 3 AVX-512 + VAES, 2 AVX2 + VAES, 1 AES-NI, 0 portable.
 static int Detect(void) {
-  const char* e = getenv("PIKASEKO256_FORCE_PORTABLE");
-  if (e && *e && !(e[0] == '0' && e[1] == 0)) return 0;
+  if (ForcePortable()) return 0;
   unsigned r[4];
   Cpuid(0, 0, r);
   const unsigned maxleaf = r[0];
@@ -52,6 +52,31 @@ static int Detect(void) {
   if (vaes && avx2 && aesni && (xcr0 & 0x6) == 0x6) return 2;
   return aesni;
 }
+static const char* const kNames[4] = {"portable", "AES-NI", "AVX2 + VAES", "AVX-512 + VAES"};
+#define PICK(name) (Level() == 3 ? name##_avx512 : Level() == 2 ? name##_avx2 : Level() == 1 ? name##_aesni : name##_portable)
+
+#elif defined(PIKASEKO256_HAVE_NEON)
+#if defined(__APPLE__)
+static int Detect(void) { return ForcePortable() ? 0 : 1; }  // every Apple AArch64 CPU has AES
+#elif defined(__linux__)
+#include <sys/auxv.h>
+#ifndef HWCAP_AES
+#define HWCAP_AES (1 << 3)
+#endif
+static int Detect(void) { return !ForcePortable() && (getauxval(AT_HWCAP) & HWCAP_AES) != 0; }
+#elif defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
+static int Detect(void) { return ForcePortable() ? 0 : 1; }  // the compiler targets AES already
+#else
+static int Detect(void) { return 0; }  // no known way to ask the OS
+#endif
+static const char* const kNames[2] = {"portable", "ARMv8 AES"};
+#define PICK(name) (Level() == 1 ? name##_neon : name##_portable)
+
+#else
+static int Detect(void) { return 0; }
+static const char* const kNames[1] = {"portable"};
+#define PICK(name) (name##_portable)
+#endif
 
 // -1: not checked yet. Every thread computes the same value, so a race only repeats the check.
 #if defined(__GNUC__) || defined(__clang__)
@@ -72,18 +97,15 @@ static int Level(void) {
   }
   return s;
 }
-#define PICK(name) (Level() == 3 ? name##_avx512 : Level() == 2 ? name##_avx2 : Level() == 1 ? name##_aesni : name##_portable)
-#else
-static int Level(void) { return 0; }
-#define PICK(name) (name##_portable)
-#endif
 
-int pikaseko256_uses_avx512(void) { return Level() == 3; }
 int pikaseko256_cpu_level(void) { return Level(); }
-
-const char* pikaseko256_implementation(void) {
-  static const char* const kNames[4] = {"portable", "AES-NI", "AVX2 + VAES", "AVX-512 + VAES"};
-  return kNames[Level()];
+const char* pikaseko256_implementation(void) { return kNames[Level()]; }
+int pikaseko256_uses_avx512(void) {
+#if defined(PIKASEKO256_HAVE_X86)
+  return Level() == 3;
+#else
+  return 0;
+#endif
 }
 
 void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {

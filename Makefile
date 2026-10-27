@@ -1,11 +1,11 @@
 # Copyright (c) 2026 Jyrki Alakuijala
 # SPDX-License-Identifier: MIT
 # PikasekoHash-256. Targets: all (default), test, bench, bench-portable, battery, clean.
-#   make                     AVX-512 + portable library, tests, tools (x86-64)
-#   make PORTABLE=1          portable code only (default on non-x86-64 targets); the
-#                            library then has no AVX-512 functions and the programs are
-#                            built with -DPIKASEKO256_NO_AVX512
-#   make test                tests; on a CPU without AVX-512 + VAES only the portable tests run
+#   make                     library, tests, tools: on x86-64 the AVX-512, AVX2 and AES-NI
+#                            code, on AArch64 the ARMv8 AES code, and the portable code
+#   make PORTABLE=1          portable code only (the default on other targets); the programs
+#                            are built with -DPIKASEKO256_PORTABLE_ONLY
+#   make test                tests; implementations the CPU lacks are skipped
 #   make test RUN=qemu-s390x run the test programs under an emulator (cross builds)
 # Variables: CC, AR, CFLAGS, LDFLAGS (e.g. LDFLAGS=-static), PORTABLE, RUN.
 CC ?= cc
@@ -18,22 +18,28 @@ ISA = -mavx512f -mavx512bw -mvaes
 AVXOPT = $(shell $(CC) -fno-code-hoisting -fno-tree-pre -E -x c /dev/null >/dev/null 2>&1 && echo -fno-code-hoisting -fno-tree-pre)
 INC = -Iinclude -Isrc
 
-# Portable-only by default when the compiler does not target x86-64.
-TARGET_ARCH_X86_64 := $(shell $(CC) -dumpmachine 2>/dev/null | grep -q -E '^(x86_64|amd64)' && echo 1)
-ifeq ($(TARGET_ARCH_X86_64),1)
-PORTABLE ?= 0
-else
+# Target: x86-64, little-endian AArch64, or other (portable-only by default).
+MACHINE := $(shell $(CC) -dumpmachine 2>/dev/null)
+ARCH := $(if $(filter x86_64-% amd64-%,$(MACHINE)),x86,$(if $(filter aarch64-% arm64-%,$(MACHINE)),arm64,other))
+ifeq ($(ARCH),other)
 PORTABLE ?= 1
+else
+PORTABLE ?= 0
 endif
 
-ifeq ($(PORTABLE),0)
+BENCH =
+ifneq ($(PORTABLE),0)
+OBJ = build/pikaseko256_portable.o build/pikaseko256_dispatch.o
+DEFS = -DPIKASEKO256_PORTABLE_ONLY
+else ifeq ($(ARCH),x86)
 OBJ = build/pikaseko256_avx512.o build/pikaseko256_avx2.o build/pikaseko256_aesni.o build/pikaseko256_portable.o build/pikaseko256_dispatch.o
 DEFS =
 BENCH = build/bench
+else ifeq ($(ARCH),arm64)
+OBJ = build/pikaseko256_neon.o build/pikaseko256_portable.o build/pikaseko256_dispatch.o
+DEFS =
 else
-OBJ = build/pikaseko256_portable.o build/pikaseko256_dispatch.o
-DEFS = -DPIKASEKO256_NO_AVX512
-BENCH =
+$(error PORTABLE=0 needs an x86-64 or AArch64 target)
 endif
 BIN = build/test build/vectors $(BENCH) build/bench_portable build/battery build/diffusion build/verify_step_collisions
 LIB = build/libpikaseko256.a
@@ -57,6 +63,9 @@ build/pikaseko256_avx2.o: src/pikaseko256_avx2.c $(SIMD_DEPS) | build
 
 build/pikaseko256_aesni.o: src/pikaseko256_aesni.c $(SIMD_DEPS) | build
 	$(CC) $(CFLAGS) -maes $(INC) -c $< -o $@
+
+build/pikaseko256_neon.o: src/pikaseko256_neon.c $(SIMD_DEPS) | build
+	$(CC) $(CFLAGS) -march=armv8-a+crypto $(INC) -c $< -o $@
 
 build/pikaseko256_portable.o: src/pikaseko256_portable.c src/pikaseko256_consts.h include/pikaseko256.h include/pikaseko256_analysis.h build/mode | build
 	$(CC) $(CFLAGS) $(INC) -c $< -o $@
@@ -89,7 +98,7 @@ test: build/test build/vectors build/verify_step_collisions
 	$(RUN) ./build/vectors | diff - test/test_vectors.txt && echo "test_vectors.txt reproduced"
 	$(RUN) ./build/verify_step_collisions analysis/data/step_collision_t*.txt
 
-ifeq ($(PORTABLE),0)
+ifneq ($(BENCH),)
 bench: build/bench
 	./build/bench
 	./build/bench --keyed

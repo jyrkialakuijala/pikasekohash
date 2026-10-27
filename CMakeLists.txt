@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: MIT
 # PikasekoHash-256. The Makefile is the primary build; this is for CMake users.
 #   cmake -B build/cmake && cmake --build build/cmake && ctest --test-dir build/cmake
-# Options: PIKASEKO256_AVX512 (ON on x86-64 when the compiler accepts the flags).
-# With PIKASEKO256_AVX512=OFF the library contains only the portable code and
-# PIKASEKO256_NO_AVX512 is defined for everything that links it.
+# Options: PIKASEKO256_SIMD (ON on x86-64 and AArch64 when the compiler accepts the flags).
+# With PIKASEKO256_SIMD=OFF the library contains only the portable code and
+# PIKASEKO256_PORTABLE_ONLY is defined for everything that links it.
 cmake_minimum_required(VERSION 3.16)
 project(pikaseko256 VERSION 0.0.1 LANGUAGES C)
 
@@ -17,16 +17,22 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 include(CheckCCompilerFlag)
 include(CMakeDependentOption)
-set(_pikaseko_x86_64 OFF)
+set(_pikaseko_simd OFF)
+set(_pikaseko_arch other)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|x64)$" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-  set(CMAKE_REQUIRED_FLAGS "-mavx512f -mavx512bw -mvaes")
-  check_c_compiler_flag("-mavx512f -mavx512bw -mvaes" PIKASEKO256_HAVE_AVX512_FLAGS)
-  unset(CMAKE_REQUIRED_FLAGS)
-  if(PIKASEKO256_HAVE_AVX512_FLAGS)
-    set(_pikaseko_x86_64 ON)
+  check_c_compiler_flag("-mavx512f -mavx512bw -mvaes -mavx2 -maes" PIKASEKO256_HAVE_X86_FLAGS)
+  if(PIKASEKO256_HAVE_X86_FLAGS)
+    set(_pikaseko_simd ON)
+    set(_pikaseko_arch x86)
+  endif()
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+  check_c_compiler_flag("-march=armv8-a+crypto" PIKASEKO256_HAVE_ARM_FLAGS)
+  if(PIKASEKO256_HAVE_ARM_FLAGS)
+    set(_pikaseko_simd ON)
+    set(_pikaseko_arch arm64)
   endif()
 endif()
-option(PIKASEKO256_AVX512 "Build the x86 implementations (AVX-512 + VAES, AVX2 + VAES, AES-NI)" ${_pikaseko_x86_64})
+option(PIKASEKO256_SIMD "Build the SIMD implementations (x86-64: AVX-512, AVX2, AES-NI; AArch64: ARMv8 AES)" ${_pikaseko_simd})
 option(PIKASEKO256_BUILD_TESTS "Build the tests, bench and tools" ON)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -38,8 +44,8 @@ target_include_directories(pikaseko256
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(pikaseko256 PRIVATE ${PIKASEKO256_WARNINGS})
-if(PIKASEKO256_AVX512)
-  target_sources(pikaseko256 PRIVATE src/pikaseko256_avx512.c)
+if(PIKASEKO256_SIMD AND _pikaseko_arch STREQUAL "x86")
+  target_sources(pikaseko256 PRIVATE src/pikaseko256_avx512.c src/pikaseko256_avx2.c src/pikaseko256_aesni.c)
   set(_avx_flags -mavx512f -mavx512bw -mvaes)
   if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     # gcc: code hoisting and tree PRE make the step spill registers.
@@ -47,11 +53,13 @@ if(PIKASEKO256_AVX512)
   endif()
   string(REPLACE ";" " " _avx_flags "${_avx_flags}")
   set_source_files_properties(src/pikaseko256_avx512.c PROPERTIES COMPILE_FLAGS "${_avx_flags}")
-  target_sources(pikaseko256 PRIVATE src/pikaseko256_avx2.c src/pikaseko256_aesni.c)
   set_source_files_properties(src/pikaseko256_avx2.c PROPERTIES COMPILE_FLAGS "-mavx2 -mvaes -maes")
   set_source_files_properties(src/pikaseko256_aesni.c PROPERTIES COMPILE_FLAGS "-maes")
+elseif(PIKASEKO256_SIMD AND _pikaseko_arch STREQUAL "arm64")
+  target_sources(pikaseko256 PRIVATE src/pikaseko256_neon.c)
+  set_source_files_properties(src/pikaseko256_neon.c PROPERTIES COMPILE_FLAGS "-march=armv8-a+crypto")
 else()
-  target_compile_definitions(pikaseko256 PUBLIC PIKASEKO256_NO_AVX512)
+  target_compile_definitions(pikaseko256 PUBLIC PIKASEKO256_PORTABLE_ONLY)
 endif()
 
 if(PIKASEKO256_BUILD_TESTS)
@@ -72,7 +80,7 @@ if(PIKASEKO256_BUILD_TESTS)
     target_link_libraries(battery PRIVATE m)
   endif()
   pikaseko256_program(bench_portable bench/bench_portable.c)
-  if(PIKASEKO256_AVX512)
+  if(PIKASEKO256_SIMD AND _pikaseko_arch STREQUAL "x86")
     pikaseko256_program(bench bench/bench.c)  # x86 only (rdtsc)
   endif()
 

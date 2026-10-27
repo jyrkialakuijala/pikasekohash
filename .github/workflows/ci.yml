@@ -46,9 +46,9 @@ jobs:
           cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release
           cmake --build build/cmake -j "$(nproc)"
           ctest --test-dir build/cmake --output-on-failure
-      - name: CMake + ctest, PIKASEKO256_AVX512=OFF
+      - name: CMake + ctest, PIKASEKO256_SIMD=OFF
         run: |
-          cmake -S . -B build/cmake-portable -DPIKASEKO256_AVX512=OFF
+          cmake -S . -B build/cmake-portable -DPIKASEKO256_SIMD=OFF
           cmake --build build/cmake-portable -j "$(nproc)"
           ctest --test-dir build/cmake-portable --output-on-failure
 
@@ -73,7 +73,7 @@ jobs:
         run: PIKASEKO256_FORCE_PORTABLE=1 make CFLAGS="$SAN_CFLAGS" LDFLAGS="$SAN_LDFLAGS" test
 
   arm64:
-    name: arm64 portable (${{ matrix.cc }})
+    name: arm64 (${{ matrix.cc }})
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     strategy:
@@ -87,8 +87,12 @@ jobs:
       - name: Install clang if missing
         if: matrix.cc == 'clang'
         run: command -v clang || (sudo apt-get update && sudo apt-get install -y clang)
-      - name: make test (portable-only is the default on non-x86-64)
-        run: make PORTABLE=1 CFLAGS="$WARN_CFLAGS" test
+      - name: make test (ARMv8 AES and portable)
+        run: make CFLAGS="$WARN_CFLAGS" test
+      - name: make test, portable path forced
+        run: PIKASEKO256_FORCE_PORTABLE=1 make CFLAGS="$WARN_CFLAGS" test
+      - name: make PORTABLE=1 test
+        run: make clean && make PORTABLE=1 CFLAGS="$WARN_CFLAGS" test
       - name: CMake + ctest
         run: |
           cmake -S . -B build/cmake

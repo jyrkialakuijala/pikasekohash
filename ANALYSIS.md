@@ -401,8 +401,8 @@ differential and no key-independent collision (measured).
 7. An extendable output mode and a tree mode for several cores.
 8. Bounds with bit-level models, a super-box model or a stronger solver; a
    division-property bound for the output; measurements on Intel cores;
-   an implementation for the ARMv8 crypto extensions (AVX2 + VAES and
-   AES-NI ones exist).
+   measurements of the AVX2 + VAES, AES-NI and ARMv8 implementations on the
+   CPUs they are meant for.
 
 Any of the changes 2, 3, 5, 6 or 7 changes the test vectors (7 only for
 the new modes).

@@ -461,9 +461,8 @@ than the AVX-512 code.
   delayed products its absorption is not a bijection either.
 * A domain-separation word, an extendable output mode and a tree mode for
   several cores are planned (the streaming interface exists).
-* An ARMv8 version is yet to be written, and the AVX2 + VAES and AES-NI
-  versions are to be measured on the CPUs they are meant for, as are all
-  versions on Intel cores.
+* The AVX2 + VAES, AES-NI and ARMv8 versions are to be measured on the CPUs
+  they are meant for, and all versions on Intel cores.
 * Bounds with bit-level or super-box models, a division-property bound for
   the output, and above all third-party cryptanalysis are needed.
 

@@ -59,7 +59,7 @@ int pikaseko256_uses_avx512(void);
 
 // The implementations by name. The _avx512 functions need AVX512F, AVX512BW and VAES (the
 // caller checks the CPU, e.g. with pikaseko256_uses_avx512) and are absent from a library
-// built without them (PIKASEKO256_NO_AVX512). The _portable functions work everywhere:
+// built without them (PIKASEKO256_PORTABLE_ONLY). The _portable functions work everywhere:
 // same results on any CPU and byte order, no tables, no data- or key-dependent branches
 // or memory accesses (much slower).
 void pikaseko256_avx512(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);

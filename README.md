@@ -48,7 +48,8 @@ is welcome; see [SECURITY.md](SECURITY.md).
   `-mavx512f -mavx512bw -mvaes -mavx2 -maes`. The library checks the CPU at
   run time and uses the fastest implementation it supports: AVX-512 + VAES,
   AVX2 + VAES (e.g. Zen 3, Alder Lake), AES-NI (any x86-64 CPU since about
-  2010), or the portable one.
+  2010), on AArch64 the ARMv8 AES instructions (`-march=armv8-a+crypto`), or
+  the portable one.
 * The portable implementation is plain C and runs on any CPU and byte order.
 
 ## Build and test
@@ -69,7 +70,7 @@ Build options:
 * `make PORTABLE=1` builds only the portable code (the default when the
   compiler does not target x86-64). That library has no `_avx512`
   functions; the unsuffixed ones use the portable code. Programs are built
-  with `-DPIKASEKO256_NO_AVX512`.
+  with `-DPIKASEKO256_PORTABLE_ONLY`.
 * `make test` checks the CPU at run time. Without AVX-512F, AVX-512BW, VAES
   and OS support for the zmm state it runs only the portable tests, says
   that the AVX-512 tests were skipped, and still succeeds.
@@ -79,7 +80,7 @@ Build options:
   `make PORTABLE=1 CC=s390x-linux-gnu-gcc AR=s390x-linux-gnu-ar LDFLAGS=-static RUN=qemu-s390x test`.
 * CMake: `cmake -B build/cmake && cmake --build build/cmake && ctest --test-dir build/cmake`
   (CMake 3.20 or newer for `--test-dir`), with options
-  `-DPIKASEKO256_AVX512=ON|OFF` and `-DPIKASEKO256_BUILD_TESTS=OFF`.
+  `-DPIKASEKO256_SIMD=ON|OFF` and `-DPIKASEKO256_BUILD_TESTS=OFF`.
 
 Other tools:
 
@@ -186,7 +187,8 @@ CPU that has it). Measured on the same Zen 5 core, unkeyed:
 
 Sixteen 512-bit registers do not fit in the sixteen ymm or xmm registers, so
 these versions spill; they have not been measured on the CPUs they are meant
-for.
+for. The ARMv8 version (`src/pikaseko256_neon.c`, the same body with AESE and
+AESMC) is tested in CI on arm64 but not yet measured.
 
 The portable implementation uses a bitsliced AES (constant time, no tables,
 no intrinsics). On the same machine (gcc -O2, `make bench-portable`) it takes

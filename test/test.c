@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Jyrki Alakuijala
 // SPDX-License-Identifier: MIT
-// Tests: test vectors (an embedded copy of part of test/test_vectors.txt) on both
-// implementations, the AVX-512 code against the portable code for every length 0..2048 at
-// three alignments and three keys, streaming against one-shot, the step function, and
-// NULL key = zero key.
+// Tests: test vectors (an embedded copy of part of test/test_vectors.txt) on every
+// implementation, each SIMD implementation against the portable code for every length
+// 0..2048 at three alignments and three keys, streaming against one-shot, the step
+// function, the dispatching functions, and NULL key = zero key.
 //
-// The AVX-512 tests run only when the CPU and OS support AVX512F, AVX512BW and VAES (and
-// the library was not built with PIKASEKO256_NO_AVX512); otherwise, or when the
-// environment variable PIKASEKO256_FORCE_PORTABLE=1 is set, only the portable tests run:
-// the vectors, the checksum, a reduced alignment and key sweep, and step consistency.
+// A SIMD implementation is tested only when the build has it and the CPU and OS support
+// it. In a portable-only build, or when the environment variable
+// PIKASEKO256_FORCE_PORTABLE=1 is set, only the portable tests run: the vectors, the
+// checksum, a reduced alignment and key sweep, streaming and step consistency.
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +18,8 @@
 #include "pikaseko256_analysis.h"
 #include "pikaseko256_impl.h"
 
-#ifndef PIKASEKO256_NO_AVX512
+#if defined(PIKASEKO256_HAVE_X86) || defined(PIKASEKO256_HAVE_NEON)
+#define HAVE_SIMD 1
 static int ForcePortable(void) {
   const char* e = getenv("PIKASEKO256_FORCE_PORTABLE");
   return e && *e && !(e[0] == '0' && e[1] == 0);
@@ -62,7 +63,7 @@ typedef void UnkeyedFn(const void*, size_t, uint64_t*);
 
 typedef void StepsFn(uint64_t*, unsigned, unsigned);
 
-#ifndef PIKASEKO256_NO_AVX512
+#ifdef HAVE_SIMD
 // An implementation against portable: random data, three keys, three alignments, every
 // length 0..2048. Returns mismatches.
 static long ImplVsPortable(const uint8_t* buf, const uint64_t* key18, HashFn* hash, const char* name) {
@@ -190,15 +191,15 @@ int main(void) {
   static uint8_t buf[4200 + 64], buf0[4200];
   int fails = 0;
   const int avx = pikaseko256_uses_avx512();
-#ifdef PIKASEKO256_NO_AVX512
-  const char* why = "portable-only build";
+#ifndef PIKASEKO256_HAVE_X86
+  const char* why = "not an x86-64 build";
 #else
   const char* why = ForcePortable() ? "PIKASEKO256_FORCE_PORTABLE is set" : "CPU or OS lacks AVX512F/AVX512BW/VAES";
 #endif
   if (!avx) printf("AVX-512 tests skipped (%s); running the portable tests only\n", why);
   HashFn* hash = pikaseko256_portable;
   UnkeyedFn* unkeyed = pikaseko256_unkeyed_portable;
-#ifndef PIKASEKO256_NO_AVX512
+#ifdef PIKASEKO256_HAVE_X86
   if (avx) { hash = pikaseko256_avx512; unkeyed = pikaseko256_unkeyed_avx512; }
 #endif
   for (int i = 0; i < 4200; i++) buf[i] = buf0[i] = (uint8_t)i;
@@ -222,7 +223,7 @@ int main(void) {
   printf("test vectors (%s): %s\n", avx ? "AVX-512 and portable" : "portable", fails ? "FAIL" : "ok");
 
   for (size_t i = 0; i < sizeof buf; i++) buf[i] = (uint8_t)Next();
-#ifndef PIKASEKO256_NO_AVX512
+#ifdef PIKASEKO256_HAVE_X86
   if (avx) {
     fails += ImplVsPortable(buf, key18, pikaseko256_avx512, "AVX-512") != 0;
     int ok = 1;
@@ -247,7 +248,7 @@ int main(void) {
 
   fails += Streaming(buf, key18, pikaseko256_portable, pikaseko256_init_portable, pikaseko256_update_portable,
                      pikaseko256_final_portable, avx ? 1100 : 600, avx ? 31 : 97, "portable") != 0;
-#ifndef PIKASEKO256_NO_AVX512
+#ifdef PIKASEKO256_HAVE_X86
   if (avx) {
     fails += Streaming(buf, key18, pikaseko256_avx512, pikaseko256_init_avx512, pikaseko256_update_avx512, pikaseko256_final_avx512, 4100, 3,
                        "AVX-512") != 0;
@@ -301,15 +302,22 @@ int main(void) {
     fails += !ok;
   }
 
-#ifndef PIKASEKO256_NO_AVX512
+#ifdef PIKASEKO256_HAVE_X86
   if (avx) fails += StepsVsPortable(pikaseko256_steps_avx512, "AVX-512");
-  // The AVX2 + VAES and AES-NI implementations, where the CPU has them.
+#endif
+#ifdef HAVE_SIMD
+  // The other SIMD implementations, where the CPU has them.
   {
     const int level = pikaseko256_cpu_level();
-    struct { int level; const char* name; HashFn* hash; InitFn* init; UpdateFn* update; FinalFn* final; StepsFn* steps; } impl[2] = {
+    struct { int level; const char* name; HashFn* hash; InitFn* init; UpdateFn* update; FinalFn* final; StepsFn* steps; } impl[] = {
+#ifdef PIKASEKO256_HAVE_X86
       {2, "AVX2", pikaseko256_avx2, pikaseko256_init_avx2, pikaseko256_update_avx2, pikaseko256_final_avx2, pikaseko256_steps_avx2},
-      {1, "AES-NI", pikaseko256_aesni, pikaseko256_init_aesni, pikaseko256_update_aesni, pikaseko256_final_aesni, pikaseko256_steps_aesni}};
-    for (int m = 0; m < 2; m++) {
+      {1, "AES-NI", pikaseko256_aesni, pikaseko256_init_aesni, pikaseko256_update_aesni, pikaseko256_final_aesni, pikaseko256_steps_aesni},
+#else
+      {1, "ARMv8 AES", pikaseko256_neon, pikaseko256_init_neon, pikaseko256_update_neon, pikaseko256_final_neon, pikaseko256_steps_neon},
+#endif
+    };
+    for (size_t m = 0; m < sizeof impl / sizeof impl[0]; m++) {
       if (level < impl[m].level) { printf("%s tests skipped (not supported or not selected)\n", impl[m].name); continue; }
       int vb = 0;
       for (size_t i = 0; i < sizeof kVectors / sizeof kVectors[0]; i++) {

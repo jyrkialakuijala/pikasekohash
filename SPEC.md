@@ -4,7 +4,7 @@ Version 0 (experimental). This document defines the function completely. An
 implementation that follows it reproduces the test vectors in section 11.
 The reference implementations are `src/pikaseko256_portable.c` (portable C)
 and `src/pikaseko256_avx512.c` (AVX-512 and VAES); both agree with this text, as
-do the AVX2 + VAES and AES-NI versions (`src/pikaseko256_simd.h`).
+do the AVX2 + VAES, AES-NI and ARMv8 versions (`src/pikaseko256_simd.h`).
 
 ## 1. Notation
 

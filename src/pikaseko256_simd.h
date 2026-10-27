@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Jyrki Alakuijala
 // SPDX-License-Identifier: MIT
-// PikasekoHash-256 for x86 without AVX-512: the body shared by the AVX2 + VAES build
-// (a 512-bit register is two 256-bit vectors) and the AES-NI build (four 128-bit vectors,
-// one per AES block). The includer defines
+// PikasekoHash-256 without AVX-512: the body shared by the AVX2 + VAES build (a 512-bit
+// register is two 256-bit vectors), the AES-NI build and the ARMv8 build (four 128-bit
+// vectors, one per AES block). The includer defines
 //   S               the vector type, W the number of vectors per register (2 or 4)
 //   SXor SAdd SAes SMul SLoad SStore   lane-wise operations (64-bit lanes, AES per block)
 //   ROT1(x) ROT2(x) the block rotations on a register (R)
