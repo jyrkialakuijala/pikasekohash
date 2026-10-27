@@ -29,14 +29,18 @@ jobs:
     env:
       CC: ${{ matrix.cc }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: CPU
         run: |
           $CC --version | head -n 1
           grep -m1 'model name' /proc/cpuinfo
           for f in avx512f avx512bw vaes; do grep -qw $f /proc/cpuinfo && echo "$f: yes" || echo "$f: no"; done
-      - name: make test (AVX-512 tests run only if the runner's CPU supports them)
-        run: make CFLAGS="$WARN_CFLAGS" test
+      - name: make test (implementations the runner's CPU lacks are skipped)
+        run: |
+          set -o pipefail
+          make CFLAGS="$WARN_CFLAGS" test 2>&1 | tee make-test.log || {
+            echo "::error title=make test failed::$(tail -n 40 make-test.log | sed -e ':a;N;$!ba' -e 's/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1; }
       - name: make test, portable path forced
         run: PIKASEKO256_FORCE_PORTABLE=1 make CFLAGS="$WARN_CFLAGS" test
       - name: make PORTABLE=1 test
@@ -68,7 +72,7 @@ jobs:
       SAN_CFLAGS: -O1 -g -std=c11 -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
       SAN_LDFLAGS: -fsanitize=address,undefined
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # The AVX-512 path is tested only when the runner's CPU supports it (detected at run time).
       - name: make test
         run: make CFLAGS="$SAN_CFLAGS" LDFLAGS="$SAN_LDFLAGS" test
@@ -80,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: make fuzz (every implementation the runner's CPU has, against portable)
         run: make fuzz FUZZTIME=120
 
@@ -95,12 +99,16 @@ jobs:
     env:
       CC: ${{ matrix.cc }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install clang if missing
         if: matrix.cc == 'clang'
         run: command -v clang || (sudo apt-get update && sudo apt-get install -y clang)
       - name: make test (ARMv8 AES and portable)
-        run: make CFLAGS="$WARN_CFLAGS" test
+        run: |
+          set -o pipefail
+          make CFLAGS="$WARN_CFLAGS" test 2>&1 | tee make-test.log || {
+            echo "::error title=make test failed::$(tail -n 40 make-test.log | sed -e ':a;N;$!ba' -e 's/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            exit 1; }
       - name: make test, portable path forced
         run: PIKASEKO256_FORCE_PORTABLE=1 make CFLAGS="$WARN_CFLAGS" test
       - name: make PORTABLE=1 test
@@ -116,7 +124,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: CMake + ctest (x86 implementations and portable)
         run: |
           cmake -S . -B build/msvc -A x64
@@ -133,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install cross compiler and qemu
         run: |
           sudo apt-get update
