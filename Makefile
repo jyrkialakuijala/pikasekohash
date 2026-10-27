@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Jyrki Alakuijala
 # SPDX-License-Identifier: MIT
-# PikasekoHash-256. Targets: all (default), test, bench, bench-portable, battery, clean.
+# PikasekoHash-256. Targets: all (default), test, bench, bench-portable, battery, fuzz, clean.
 #   make                     library, tests, tools: on x86-64 the AVX-512, AVX2 and AES-NI
 #                            code, on AArch64 the ARMv8 AES code, and the portable code
 #   make PORTABLE=1          portable code only (the default on other targets); the programs
@@ -113,7 +113,30 @@ bench-portable: build/bench_portable
 battery: build/battery
 	$(RUN) ./build/battery
 
+# Fuzzing (clang with libFuzzer): every implementation against the portable one, one-shot
+# and streaming, under ASan and UBSan. make fuzz FUZZTIME=60
+FUZZ_CC ?= clang
+FUZZTIME ?= 60
+FZ = -O1 -g -std=c11 -fsanitize=address,undefined -fno-sanitize-recover=all $(INC)
+FUZZ_SRC = src/pikaseko256_portable.c src/pikaseko256_dispatch.c
+ifeq ($(PORTABLE)-$(ARCH),0-x86)
+FUZZ_SIMD = $(FUZZ_CC) $(FZ) -mavx512f -mavx512bw -mvaes -c src/pikaseko256_avx512.c -o build/fuzzobj/avx512.o && \
+            $(FUZZ_CC) $(FZ) -mavx2 -mvaes -maes -c src/pikaseko256_avx2.c -o build/fuzzobj/avx2.o && \
+            $(FUZZ_CC) $(FZ) -maes -c src/pikaseko256_aesni.c -o build/fuzzobj/aesni.o
+else ifeq ($(PORTABLE)-$(ARCH),0-arm64)
+FUZZ_SIMD = $(FUZZ_CC) $(FZ) -march=armv8-a+crypto -c src/pikaseko256_neon.c -o build/fuzzobj/neon.o
+else
+FUZZ_SIMD = true
+endif
+build/fuzz: test/fuzz.c $(wildcard src/*.c src/*.h include/*.h) build/mode | build
+	rm -rf build/fuzzobj && mkdir -p build/fuzzobj
+	$(FUZZ_SIMD)
+	$(FUZZ_CC) $(FZ) $(DEFS) -fsanitize=fuzzer $< $(FUZZ_SRC) $$(ls build/fuzzobj/*.o 2>/dev/null) -o $@
+fuzz: build/fuzz
+	mkdir -p build/fuzz-corpus
+	./build/fuzz -max_total_time=$(FUZZTIME) -max_len=5000 build/fuzz-corpus
+
 clean:
 	rm -rf build
 
-.PHONY: all test bench bench-portable battery clean FORCE
+.PHONY: all test bench bench-portable battery fuzz clean FORCE

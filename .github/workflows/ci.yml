@@ -72,6 +72,15 @@ jobs:
       - name: make test, portable path forced
         run: PIKASEKO256_FORCE_PORTABLE=1 make CFLAGS="$SAN_CFLAGS" LDFLAGS="$SAN_LDFLAGS" test
 
+  fuzz:
+    name: libFuzzer (clang, ASan + UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: make fuzz (every implementation the runner's CPU has, against portable)
+        run: make fuzz FUZZTIME=120
+
   arm64:
     name: arm64 (${{ matrix.cc }})
     runs-on: ubuntu-24.04-arm

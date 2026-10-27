@@ -60,6 +60,7 @@ is welcome; see [SECURITY.md](SECURITY.md).
     make bench      # speed, unkeyed and keyed (AVX-512 builds)
     make bench-portable
     make battery    # 256-bit statistical battery (single-threaded, a few minutes)
+    make fuzz       # libFuzzer (clang): all implementations against portable
     make clean
 
 The library is `build/libpikaseko256.a`; the header is
