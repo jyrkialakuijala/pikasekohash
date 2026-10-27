@@ -61,6 +61,7 @@ is welcome; see [SECURITY.md](SECURITY.md).
     make bench-portable
     make battery    # 256-bit statistical battery (single-threaded, a few minutes)
     make fuzz       # libFuzzer (clang): all implementations against portable
+    make test-python  # the Python reference (ref/pikaseko256.py) against the vectors
     make clean
 
 The library is `build/libpikaseko256.a`; the header is

@@ -41,6 +41,9 @@ jobs:
         run: PIKASEKO256_FORCE_PORTABLE=1 make CFLAGS="$WARN_CFLAGS" test
       - name: make PORTABLE=1 test
         run: make clean && make PORTABLE=1 CFLAGS="$WARN_CFLAGS" test
+      - name: Python reference against the test vectors
+        if: matrix.cc == 'gcc'
+        run: make test-python
       - name: CMake + ctest
         run: |
           cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release

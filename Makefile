@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Jyrki Alakuijala
 # SPDX-License-Identifier: MIT
-# PikasekoHash-256. Targets: all (default), test, bench, bench-portable, battery, fuzz, clean.
+# PikasekoHash-256. Targets: all (default), test, test-python, bench, bench-portable, battery, fuzz, clean.
 #   make                     library, tests, tools: on x86-64 the AVX-512, AVX2 and AES-NI
 #                            code, on AArch64 the ARMv8 AES code, and the portable code
 #   make PORTABLE=1          portable code only (the default on other targets); the programs
@@ -113,6 +113,10 @@ bench-portable: build/bench_portable
 battery: build/battery
 	$(RUN) ./build/battery
 
+# The Python reference (ref/pikaseko256.py, from SPEC.md) against the test vectors.
+test-python:
+	python3 ref/pikaseko256.py --checksum
+
 # Fuzzing (clang with libFuzzer): every implementation against the portable one, one-shot
 # and streaming, under ASan and UBSan. make fuzz FUZZTIME=60
 FUZZ_CC ?= clang
@@ -139,4 +143,4 @@ fuzz: build/fuzz
 clean:
 	rm -rf build
 
-.PHONY: all test bench bench-portable battery fuzz clean FORCE
+.PHONY: all test test-python bench bench-portable battery fuzz clean FORCE
