@@ -238,6 +238,8 @@ The full definition is in [SPEC.md](SPEC.md).
 * [paper/pikasekohash.md](paper/pikasekohash.md): a paper describing the
   design, its rationale, the security analysis and measurements.
 * [analysis/reviews/](analysis/reviews/): five review reports on the design.
+* [analysis/challenges.md](analysis/challenges.md): cryptanalysis targets on
+  reduced versions.
 * [SECURITY.md](SECURITY.md): reporting attacks and implementation issues.
 * [CONTRIBUTING.md](CONTRIBUTING.md): building, testing and changing the
   function.

@@ -31,6 +31,8 @@ changes the output of the function changes the test vectors.
   streaming) with the portable one under ASan and UBSan; run in CI.
 * Python reference implementation from the specification (`ref/pikaseko256.py`,
   `make test-python`): reproduces all test vectors and the checksum; run in CI.
+* Cryptanalysis challenges on reduced versions (analysis/challenges.md); the
+  Python reference computes them (`--final`, `absorb`).
 * Guard-page test: messages that end at, or start right after, an inaccessible
   page, for every implementation (POSIX systems).
 * `pikaseko256_key_from_bytes` and `pikaseko256_digest_to_bytes`: byte forms

@@ -9,6 +9,7 @@ Slow (milliseconds per short message), meant for checking implementations:
     python3 ref/pikaseko256.py --checksum      # also the checksum over lengths 0..2048 (seconds)
     python3 ref/pikaseko256.py --hex 616263    # hash the bytes 'abc', unkeyed
     python3 ref/pikaseko256.py --hex 616263 --key 0102...  # keyed (64 key bytes in hex)
+    python3 ref/pikaseko256.py --hex 616263 --final 1      # reduced: one final step
 
 The digest is printed as out[0..3] in hex, as in the test vectors, and as 32 bytes.
 """
@@ -161,8 +162,23 @@ def step(r, t):
 F, M, G = (0, 5, 10, 15), (1, 4, 11, 14), (3, 6, 9, 12)
 
 
-def pikaseko256(msg, key=None):
-    """Returns out[0..3] (four 64-bit integers). key: eight 64-bit integers, or None."""
+def absorb(r, t, packets):
+    """One absorption (section 7) of 1..4 64-byte packets into the state r (16 vectors) at
+    step index t. Returns the new state; the next step index is t + 3."""
+    r = step(r, t)
+    for k, p in enumerate(packets):
+        r[F[k]] = add(r[F[k]], p)
+    r = step(r, t + 1)
+    prods = [mul32(r[M[k]], r[F[k]]) for k in range(len(packets))]
+    r = step(r, t + 2)
+    for k, p in enumerate(prods):
+        r[G[k]] = xor(r[G[k]], p)
+    return r
+
+
+def pikaseko256(msg, key=None, final_steps=6):
+    """Returns out[0..3] (four 64-bit integers). key: eight 64-bit integers, or None.
+    final_steps other than 6 gives the reduced versions of analysis/challenges.md."""
     key = key or [0] * 8
     n = len(msg)
     padded = msg + b"\x80" + b"\x00" * ((55 - n) % 64) + (n & MASK64).to_bytes(8, "little")
@@ -171,16 +187,9 @@ def pikaseko256(msg, key=None):
     r = initial_state(key)
     t = 0
     for u in range(0, len(packets), 4):
-        q = packets[u:u + 4]
-        r = step(r, t); t += 1
-        for k, p in enumerate(q):
-            r[F[k]] = add(r[F[k]], p)
-        r = step(r, t); t += 1
-        prods = [mul32(r[M[k]], r[F[k]]) for k in range(len(q))]
-        r = step(r, t); t += 1
-        for k, p in enumerate(prods):
-            r[G[k]] = xor(r[G[k]], p)
-    for _ in range(6):
+        r = absorb(r, t, packets[u:u + 4])
+        t += 3
+    for _ in range(final_steps):
         r = step(r, t); t += 1
     a = r[0]
     for i in range(1, 16):
@@ -231,7 +240,8 @@ def main(argv):
             kb = bytes.fromhex(argv[argv.index("--key") + 1])
             assert len(kb) == 64, "the key is 64 bytes"
             key = [int.from_bytes(kb[8 * i:8 * i + 8], "little") for i in range(8)]
-        out = pikaseko256(msg, key)
+        final = int(argv[argv.index("--final") + 1]) if "--final" in argv else 6
+        out = pikaseko256(msg, key, final)
         print(" ".join("%016x" % x for x in out))
         print(digest_bytes(out).hex())
         return 0

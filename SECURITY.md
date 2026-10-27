@@ -39,7 +39,8 @@ In the implementations (`src/`):
 This is a research design, and cryptanalysis is what it needs. Please report
 attacks, distinguishers, improved bounds and corrections publicly by
 opening an issue (there is a "Cryptanalysis result" template), or link to
-your paper or preprint. Public discussion helps everyone who studies the
+your paper or preprint. [analysis/challenges.md](analysis/challenges.md)
+lists concrete targets on reduced versions, with what is known about each. Public discussion helps everyone who studies the
 design. Results will be credited in ANALYSIS.md.
 
 ## Reporting implementation vulnerabilities
