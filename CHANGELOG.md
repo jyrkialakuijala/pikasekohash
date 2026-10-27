@@ -37,6 +37,10 @@ changes the output of the function changes the test vectors.
   code start the unkeyed hash from the precomputed state after step 0 and set up
   the key with vector operations (AVX2 unkeyed 93 to 85 ns, keyed 160 to 101 ns;
   portable 6.1 to 5.4 µs). Output unchanged.
+* One benchmark for every implementation and platform (`bench --impl`): the
+  iteration count is set by time, it reports the median, the minimum and the
+  spread, and prints the cpufreq governor; `bench_portable` is gone
+  (`make bench-portable` runs `bench --impl portable`).
 * Guard-page test: messages that end at, or start right after, an inaccessible
   page, for every implementation (POSIX systems).
 * `pikaseko256_key_from_bytes` and `pikaseko256_digest_to_bytes`: byte forms

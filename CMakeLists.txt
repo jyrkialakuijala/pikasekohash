@@ -84,10 +84,7 @@ if(PIKASEKO256_BUILD_TESTS)
   if(NOT MSVC)
     target_link_libraries(battery PRIVATE m)
   endif()
-  pikaseko256_program(bench_portable bench/bench_portable.c)
-  if(PIKASEKO256_SIMD AND _pikaseko_arch STREQUAL "x86")
-    pikaseko256_program(bench bench/bench.c)  # x86 only (rdtsc)
-  endif()
+  pikaseko256_program(bench bench/bench.c)
 
   add_test(NAME test COMMAND pikaseko256_test)
   add_test(NAME vectors COMMAND ${CMAKE_COMMAND}

@@ -57,8 +57,9 @@ is welcome; see [SECURITY.md](SECURITY.md).
     make            # library, tests, benchmark and tools in build/
     make test       # test vectors; AVX-512 against portable for lengths 0..2048;
                     # the one-step collision pairs
-    make bench      # speed, unkeyed and keyed (AVX-512 builds)
-    make bench-portable
+    make bench      # speed of the implementation in use, unkeyed and keyed
+    make bench-portable  # the same for the portable implementation
+                    # (./build/bench --impl avx512|avx2|aesni|neon|portable for any)
     make battery    # 256-bit statistical battery (single-threaded, a few minutes)
     make fuzz       # libFuzzer (clang): all implementations against portable
     make test-python  # the Python reference (ref/pikaseko256.py) against the vectors

@@ -27,21 +27,19 @@ else
 PORTABLE ?= 0
 endif
 
-BENCH =
 ifneq ($(PORTABLE),0)
 OBJ = build/pikaseko256_portable.o build/pikaseko256_dispatch.o
 DEFS = -DPIKASEKO256_PORTABLE_ONLY
 else ifeq ($(ARCH),x86)
 OBJ = build/pikaseko256_avx512.o build/pikaseko256_avx2.o build/pikaseko256_aesni.o build/pikaseko256_portable.o build/pikaseko256_dispatch.o
 DEFS =
-BENCH = build/bench
 else ifeq ($(ARCH),arm64)
 OBJ = build/pikaseko256_neon.o build/pikaseko256_portable.o build/pikaseko256_dispatch.o
 DEFS =
 else
 $(error PORTABLE=0 needs an x86-64 or AArch64 target)
 endif
-BIN = build/test build/vectors $(BENCH) build/bench_portable build/battery build/diffusion build/verify_step_collisions
+BIN = build/test build/vectors build/bench build/battery build/diffusion build/verify_step_collisions
 LIB = build/libpikaseko256.a
 
 all: $(BIN)
@@ -84,8 +82,6 @@ build/vectors: test/vectors.c $(HDRS) $(LIB)
 	$(CC) $(CFLAGS) $(DEFS) $(INC) $< $(LIB) $(LDFLAGS) -o $@
 build/bench: bench/bench.c $(HDRS) $(LIB)
 	$(CC) $(CFLAGS) $(DEFS) $(INC) $< $(LIB) $(LDFLAGS) -o $@
-build/bench_portable: bench/bench_portable.c $(HDRS) $(LIB)
-	$(CC) $(CFLAGS) $(DEFS) $(INC) $< $(LIB) $(LDFLAGS) -o $@
 build/battery: tools/battery.c $(HDRS) $(LIB)
 	$(CC) $(CFLAGS) $(DEFS) -D_POSIX_C_SOURCE=200809L $(INC) $< $(LIB) $(LDFLAGS) -lm -o $@
 build/diffusion: tools/diffusion.c $(HDRS) $(LIB)
@@ -98,17 +94,14 @@ test: build/test build/vectors build/verify_step_collisions
 	$(RUN) ./build/vectors | diff - test/test_vectors.txt && echo "test_vectors.txt reproduced"
 	$(RUN) ./build/verify_step_collisions analysis/data/step_collision_t*.txt
 
-ifneq ($(BENCH),)
+# Speed of the implementation pikaseko256() uses; ./build/bench --impl NAME for another.
 bench: build/bench
-	./build/bench
-	./build/bench --keyed
-else
-bench: bench-portable
-endif
+	$(RUN) ./build/bench
+	$(RUN) ./build/bench --keyed
 
-bench-portable: build/bench_portable
-	$(RUN) ./build/bench_portable
-	$(RUN) ./build/bench_portable --keyed
+bench-portable: build/bench
+	$(RUN) ./build/bench --impl portable --max 65536 --reps 5
+	$(RUN) ./build/bench --impl portable --max 65536 --reps 5 --keyed
 
 battery: build/battery
 	$(RUN) ./build/battery
