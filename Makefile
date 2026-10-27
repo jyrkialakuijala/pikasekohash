@@ -48,17 +48,17 @@ MODE = PORTABLE=$(PORTABLE) CC=$(CC) AR=$(AR) CFLAGS=$(CFLAGS) LDFLAGS=$(LDFLAGS
 build/mode: FORCE | build
 	@echo '$(MODE)' | cmp -s - $@ || echo '$(MODE)' > $@
 
-build/pikaseko256_avx512.o: src/pikaseko256_avx512.c src/pikaseko256_consts.h include/pikaseko256.h build/mode | build
+build/pikaseko256_avx512.o: src/pikaseko256_avx512.c src/pikaseko256_consts.h include/pikaseko256.h include/pikaseko256_analysis.h build/mode | build
 	$(CC) $(CFLAGS) $(AVXOPT) $(ISA) $(INC) -c $< -o $@
 
-build/pikaseko256_portable.o: src/pikaseko256_portable.c src/pikaseko256_consts.h include/pikaseko256.h build/mode | build
+build/pikaseko256_portable.o: src/pikaseko256_portable.c src/pikaseko256_consts.h include/pikaseko256.h include/pikaseko256_analysis.h build/mode | build
 	$(CC) $(CFLAGS) $(INC) -c $< -o $@
 
 $(LIB): $(OBJ)
 	rm -f $@
 	$(AR) rcs $@ $^
 
-HDRS = include/pikaseko256.h test/cpu.h build/mode
+HDRS = include/pikaseko256.h include/pikaseko256_analysis.h test/cpu.h build/mode
 build/test: test/test.c $(HDRS) $(LIB)
 	$(CC) $(CFLAGS) $(DEFS) $(INC) $< $(LIB) $(LDFLAGS) -o $@
 build/vectors: test/vectors.c $(HDRS) $(LIB)

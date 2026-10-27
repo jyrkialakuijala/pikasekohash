@@ -14,6 +14,7 @@
 
 #include "cpu.h"
 #include "pikaseko256.h"
+#include "pikaseko256_analysis.h"
 
 typedef struct { int keyed; size_t len; uint64_t h[4]; } Vector;
 static const Vector kVectors[] = {

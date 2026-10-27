@@ -108,12 +108,12 @@ uint64_t pikaseko64(const void* data, size_t len, const uint64_t key[8]);
 void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
 void pikaseko256_unkeyed_portable(const void* data, size_t len, uint64_t out[4]);
 uint64_t pikaseko64_portable(const void* data, size_t len, const uint64_t key[8]);
-
-// Runs nsteps steps of the core from step index t0 on a 128-word state
-// (word 8i + l is lane l of register i). For analysis.
-void pikaseko256_steps(uint64_t state[128], unsigned t0, unsigned nsteps);
-void pikaseko256_steps_portable(uint64_t state[128], unsigned t0, unsigned nsteps);
 ```
+
+`include/pikaseko256_analysis.h` declares the step function alone, for
+analysis: `pikaseko256_steps(state, t0, nsteps)` runs nsteps steps from step
+index t0 on a 128-word state (word 8i + l is lane l of register i), and
+`pikaseko256_steps_portable` does the same in portable C.
 
 Example:
 

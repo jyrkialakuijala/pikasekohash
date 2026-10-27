@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "pikaseko256.h"
+#include "pikaseko256_analysis.h"
 #include "pikaseko256_consts.h"
 
 typedef struct { uint64_t l[8]; } Reg;    // a 512-bit register in normal form: 8 lanes

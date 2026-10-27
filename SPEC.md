@@ -264,7 +264,7 @@ longer messages and a checksum over all lengths 0..2048, is
 * An implementation with 128-bit AES instructions applies AESENC per block;
   the only operation that moves data between blocks is the block rotation
   of the second-round key (and the final rot1, rot2 of the fold).
-* `pikaseko256_steps(state, t0, nsteps)` in `include/pikaseko256.h` runs
+* `pikaseko256_steps(state, t0, nsteps)` in `include/pikaseko256_analysis.h` runs
   nsteps steps from step index t0 on a state given as 128 words, word
   8i + l = r_i[l]. It is meant for analysis and for checking an
   implementation of section 5 in isolation.

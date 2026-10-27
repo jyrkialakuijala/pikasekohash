@@ -12,6 +12,7 @@
 
 #include "cpu.h"
 #include "pikaseko256.h"
+#include "pikaseko256_analysis.h"
 
 static int ReadWords(char* line, uint64_t* w) {
   char* p = strchr(line, ' ');

@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "pikaseko256.h"
+#include "pikaseko256_analysis.h"
 #include "pikaseko256_consts.h"
 
 typedef __m512i V;

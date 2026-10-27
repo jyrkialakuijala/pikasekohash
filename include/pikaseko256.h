@@ -27,10 +27,7 @@ void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], u
 void pikaseko256_unkeyed_portable(const void* data, size_t len, uint64_t out[4]);
 uint64_t pikaseko64_portable(const void* data, size_t len, const uint64_t key[8]);
 
-// For analysis: run nsteps steps, starting at step index t0, on a state of 16 registers
-// x 8 lanes (state[8 * i + l] = lane l of register r_i).
-void pikaseko256_steps(uint64_t state[128], unsigned t0, unsigned nsteps);
-void pikaseko256_steps_portable(uint64_t state[128], unsigned t0, unsigned nsteps);
+// The step function alone, for analysis, is declared in pikaseko256_analysis.h.
 
 #ifdef __cplusplus
 }

@@ -7,6 +7,9 @@ changes the output of the function changes the test vectors.
 
 * Paper (paper/pikasekohash.md) describing the design and its analysis.
 * Statistical results of the final design in analysis/results/statistics.txt.
+* Security targets per mode (ANALYSIS.md); figure of the step (docs/step.svg).
+* The analysis entry points `pikaseko256_steps` and `pikaseko256_steps_portable`
+  moved to `include/pikaseko256_analysis.h`.
 
 ## 0.0.1 (version 0) - 2026-10-26
 
