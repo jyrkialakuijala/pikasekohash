@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < (1 << 20); i++) buf[i] = (uint8_t)(i * 131 + 7);
   const uint64_t key[8] = {1, 2, 3, 4, 5, 6, 7, 8};
   uint64_t sink = 0, out[4];
-  printf("%s\n%10s %12s %12s %12s\n", keyed ? "keyed" : "unkeyed", "bytes", "GB/s", "ns/hash", "TSC cyc/B");
+  printf("pikaseko256 (%s), %s\n%10s %12s %12s %12s\n", pikaseko256_uses_avx512() ? "AVX-512" : "portable", keyed ? "keyed" : "unkeyed", "bytes", "GB/s", "ns/hash", "TSC cyc/B");
   for (size_t si = 0; si < sizeof sizes / sizeof sizes[0]; si++) {
     const size_t n = sizes[si];
     const long iters = (long)(200000000 / (n + 64)) + 10;

@@ -11,11 +11,18 @@
 // the vectors, the checksum, a reduced alignment and key sweep, and step consistency.
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include "cpu.h"
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
+
+#ifndef PIKASEKO256_NO_AVX512
+static int ForcePortable(void) {
+  const char* e = getenv("PIKASEKO256_FORCE_PORTABLE");
+  return e && *e && !(e[0] == '0' && e[1] == 0);
+}
+#endif
 
 typedef struct { int keyed; size_t len; uint64_t h[4]; } Vector;
 static const Vector kVectors[] = {
@@ -64,11 +71,11 @@ static long AvxVsPortable(const uint8_t* buf, const uint64_t* key18) {
       for (int al = 0; al < 3; al++) {
         const uint8_t* d = buf + (al == 0 ? 0 : al == 1 ? 1 : 37);
         uint64_t a[4], p[4];
-        pikaseko256(d, len, kp, a);
+        pikaseko256_avx512(d, len, kp, a);
         pikaseko256_portable(d, len, kp, p);
         n++;
         if (memcmp(a, p, 32)) { if (bad < 5) printf("FAIL AVX-512 != portable: len %zu key %d align %d\n", len, kc, al); bad++; }
-        if (pikaseko64(d, len, kp) != a[0] || pikaseko64_portable(d, len, kp) != p[0]) bad++;
+        if (pikaseko64_avx512(d, len, kp) != a[0] || pikaseko64_portable(d, len, kp) != p[0]) bad++;
       }
   }
   printf("AVX-512 vs portable: %ld inputs, %ld mismatches\n", n, bad);
@@ -81,7 +88,7 @@ static int StepsAvxVsPortable(void) {
   for (int trial = 0; trial < 64; trial++) {
     uint64_t s1[128], s2[128];
     for (int i = 0; i < 128; i++) s1[i] = s2[i] = Next();
-    pikaseko256_steps(s1, (unsigned)trial % 11, 1 + trial % 6);
+    pikaseko256_steps_avx512(s1, (unsigned)trial % 11, 1 + trial % 6);
     pikaseko256_steps_portable(s2, (unsigned)trial % 11, 1 + trial % 6);
     sb += memcmp(s1, s2, sizeof s1) != 0;
   }
@@ -179,17 +186,17 @@ static long Streaming(const uint8_t* buf, const uint64_t* key18, HashFn* hash, I
 int main(void) {
   static uint8_t buf[4200 + 64];
   int fails = 0;
-  const int avx = PikasekoHaveAvx512();
+  const int avx = pikaseko256_uses_avx512();
 #ifdef PIKASEKO256_NO_AVX512
   const char* why = "portable-only build";
 #else
-  const char* why = PikasekoForcePortable() ? "PIKASEKO256_FORCE_PORTABLE is set" : "CPU or OS lacks AVX512F/AVX512BW/VAES";
+  const char* why = ForcePortable() ? "PIKASEKO256_FORCE_PORTABLE is set" : "CPU or OS lacks AVX512F/AVX512BW/VAES";
 #endif
   if (!avx) printf("AVX-512 tests skipped (%s); running the portable tests only\n", why);
   HashFn* hash = pikaseko256_portable;
   UnkeyedFn* unkeyed = pikaseko256_unkeyed_portable;
 #ifndef PIKASEKO256_NO_AVX512
-  if (avx) { hash = pikaseko256; unkeyed = pikaseko256_unkeyed; }
+  if (avx) { hash = pikaseko256_avx512; unkeyed = pikaseko256_unkeyed_avx512; }
 #endif
   for (int i = 0; i < 4200; i++) buf[i] = (uint8_t)i;
   const uint64_t key18[8] = {1, 2, 3, 4, 5, 6, 7, 8}, zero[8] = {0};
@@ -234,22 +241,42 @@ int main(void) {
                      pikaseko256_final_portable, avx ? 1100 : 600, avx ? 31 : 97, "portable") != 0;
 #ifndef PIKASEKO256_NO_AVX512
   if (avx) {
-    fails += Streaming(buf, key18, pikaseko256, pikaseko256_init, pikaseko256_update, pikaseko256_final, 4100, 3,
+    fails += Streaming(buf, key18, pikaseko256_avx512, pikaseko256_init_avx512, pikaseko256_update_avx512, pikaseko256_final_avx512, 4100, 3,
                        "AVX-512") != 0;
     // The context is the same for both implementations: start with one, continue with the other.
     uint64_t want[4], got[4];
-    pikaseko256(buf, 3000, key18, want);
+    pikaseko256_avx512(buf, 3000, key18, want);
     pikaseko256_ctx ctx;
-    pikaseko256_init(&ctx, key18);
-    pikaseko256_update(&ctx, buf, 777);
+    pikaseko256_init_avx512(&ctx, key18);
+    pikaseko256_update_avx512(&ctx, buf, 777);
     pikaseko256_update_portable(&ctx, buf + 777, 1000);
-    pikaseko256_update(&ctx, buf + 1777, 1223);
+    pikaseko256_update_avx512(&ctx, buf + 1777, 1223);
     pikaseko256_final_portable(&ctx, got);
     const int ok = !memcmp(want, got, 32);
     printf("streaming, implementations mixed: %s\n", ok ? "ok" : "FAIL");
     fails += !ok;
   }
 #endif
+  // The dispatching functions equal the portable ones.
+  {
+    int ok = 1;
+    for (size_t len = 0; len <= 600; len += 37) {
+      uint64_t a[4], b[4], c[4], s[128], u[128];
+      pikaseko256(buf, len, key18, a); pikaseko256_portable(buf, len, key18, b);
+      ok &= !memcmp(a, b, 32) && pikaseko64(buf, len, NULL) == pikaseko64_portable(buf, len, NULL);
+      pikaseko256_unkeyed(buf, len, a); pikaseko256_unkeyed_portable(buf, len, b);
+      pikaseko256_ctx ctx;
+      pikaseko256_init(&ctx, NULL); pikaseko256_update(&ctx, buf, len / 2); pikaseko256_update(&ctx, buf + len / 2, len - len / 2);
+      pikaseko256_final(&ctx, c);
+      ok &= !memcmp(a, b, 32) && !memcmp(a, c, 32);
+      for (int i = 0; i < 128; i++) s[i] = u[i] = Next();
+      pikaseko256_steps(s, (unsigned)len, 2); pikaseko256_steps_portable(u, (unsigned)len, 2);
+      ok &= !memcmp(s, u, sizeof s);
+    }
+    printf("dispatching functions (%s): %s\n", pikaseko256_uses_avx512() ? "AVX-512" : "portable", ok ? "ok" : "FAIL");
+    fails += !ok;
+  }
+
   // Byte forms: the canonical digest of the empty message (SPEC.md, section 11) and a key.
   {
     static const uint8_t want[32] = {0x2d, 0x69, 0x10, 0x38, 0x97, 0xce, 0xe9, 0x4c, 0x6e, 0x1d, 0x9b, 0x66, 0x92, 0xdf, 0x3b, 0x93,

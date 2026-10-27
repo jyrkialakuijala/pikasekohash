@@ -29,20 +29,16 @@ static inline void pikaseko256_digest_to_bytes(uint8_t bytes[32], const uint64_t
   for (int i = 0; i < 32; i++) bytes[i] = (uint8_t)(out[i / 8] >> (8 * (i % 8)));
 }
 
-// AVX-512 implementation (needs AVX512F, AVX512BW and VAES; the caller checks the CPU).
+// Hash functions. They use the AVX-512 implementation when the library has it and the CPU
+// and OS support AVX512F, AVX512BW and VAES (checked once, at the first call), and the
+// portable implementation otherwise. The results are the same either way.
 void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
 void pikaseko256_unkeyed(const void* data, size_t len, uint64_t out[4]);
 uint64_t pikaseko64(const void* data, size_t len, const uint64_t key[8]);  // lane 0 of the digest
 
-// Portable C implementation: same results on any CPU and byte order, no tables,
-// no data- or key-dependent branches or memory accesses (much slower).
-void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
-void pikaseko256_unkeyed_portable(const void* data, size_t len, uint64_t out[4]);
-uint64_t pikaseko64_portable(const void* data, size_t len, const uint64_t key[8]);
-
-// Streaming: the same function as above for a message given in pieces. The context holds
-// the state in normal form, so a hash started with one implementation can be continued
-// with the other. final does not change the context (more data can still be added).
+// Streaming: the same function for a message given in pieces. final does not change the
+// context (more data can still be added). The context holds the state in normal form and
+// is the same for every implementation, so a hash can be continued with any of them.
 typedef struct {
   uint64_t r[128];  // state: word 8i + l is lane l of register r_i
   uint64_t len;     // message bytes so far
@@ -53,6 +49,27 @@ typedef struct {
 void pikaseko256_init(pikaseko256_ctx* ctx, const uint64_t key[8]);  // key NULL: zero key
 void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len);
 void pikaseko256_final(const pikaseko256_ctx* ctx, uint64_t out[4]);
+
+// 1 when the functions above use the AVX-512 implementation. Setting the environment
+// variable PIKASEKO256_FORCE_PORTABLE (to anything but "0") before the first call selects
+// the portable implementation.
+int pikaseko256_uses_avx512(void);
+
+// The implementations by name. The _avx512 functions need AVX512F, AVX512BW and VAES (the
+// caller checks the CPU, e.g. with pikaseko256_uses_avx512) and are absent from a library
+// built without them (PIKASEKO256_NO_AVX512). The _portable functions work everywhere:
+// same results on any CPU and byte order, no tables, no data- or key-dependent branches
+// or memory accesses (much slower).
+void pikaseko256_avx512(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
+void pikaseko256_unkeyed_avx512(const void* data, size_t len, uint64_t out[4]);
+uint64_t pikaseko64_avx512(const void* data, size_t len, const uint64_t key[8]);
+void pikaseko256_init_avx512(pikaseko256_ctx* ctx, const uint64_t key[8]);
+void pikaseko256_update_avx512(pikaseko256_ctx* ctx, const void* data, size_t len);
+void pikaseko256_final_avx512(const pikaseko256_ctx* ctx, uint64_t out[4]);
+
+void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
+void pikaseko256_unkeyed_portable(const void* data, size_t len, uint64_t out[4]);
+uint64_t pikaseko64_portable(const void* data, size_t len, const uint64_t key[8]);
 void pikaseko256_init_portable(pikaseko256_ctx* ctx, const uint64_t key[8]);
 void pikaseko256_update_portable(pikaseko256_ctx* ctx, const void* data, size_t len);
 void pikaseko256_final_portable(const pikaseko256_ctx* ctx, uint64_t out[4]);

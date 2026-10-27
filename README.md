@@ -46,8 +46,8 @@ is welcome; see [SECURITY.md](SECURITY.md).
 * A C11 compiler (gcc or clang) and `make`.
 * For the fast implementation: a compiler that supports
   `-mavx512f -mavx512bw -mvaes`, and a CPU with AVX-512F, AVX-512BW and
-  VAES to run it. There is no run-time CPU dispatch; the caller checks the
-  CPU.
+  VAES to run it. The library checks the CPU at run time and falls back to
+  the portable implementation.
 * The portable implementation is plain C and runs on any CPU and byte order.
 
 ## Build and test
@@ -66,9 +66,9 @@ The library is `build/libpikaseko256.a`; the header is
 Build options:
 
 * `make PORTABLE=1` builds only the portable code (the default when the
-  compiler does not target x86-64). That library has no `pikaseko256`,
-  `pikaseko256_unkeyed`, `pikaseko64` or `pikaseko256_steps`; use the
-  `_portable` names. Programs are built with `-DPIKASEKO256_NO_AVX512`.
+  compiler does not target x86-64). That library has no `_avx512`
+  functions; the unsuffixed ones use the portable code. Programs are built
+  with `-DPIKASEKO256_NO_AVX512`.
 * `make test` checks the CPU at run time. Without AVX-512F, AVX-512BW, VAES
   and OS support for the zmm state it runs only the portable tests, says
   that the AVX-512 tests were skipped, and still succeeds.
@@ -79,8 +79,6 @@ Build options:
 * CMake: `cmake -B build/cmake && cmake --build build/cmake && ctest --test-dir build/cmake`
   (CMake 3.20 or newer for `--test-dir`), with options
   `-DPIKASEKO256_AVX512=ON|OFF` and `-DPIKASEKO256_BUILD_TESTS=OFF`.
-* Library users check the CPU before calling the AVX-512 functions;
-  `test/cpu.h` shows how.
 
 Other tools:
 
@@ -104,23 +102,30 @@ void pikaseko256_unkeyed(const void* data, size_t len, uint64_t out[4]);
 // 64-bit hash: out[0] of pikaseko256.
 uint64_t pikaseko64(const void* data, size_t len, const uint64_t key[8]);
 
-// Portable C versions, bit-identical to the above on every platform.
-void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
-void pikaseko256_unkeyed_portable(const void* data, size_t len, uint64_t out[4]);
-uint64_t pikaseko64_portable(const void* data, size_t len, const uint64_t key[8]);
-
 // Streaming: same result as pikaseko256 for the concatenation of the pieces.
-// final does not change the context. The context is shared by both implementations.
+// final does not change the context.
 void pikaseko256_init(pikaseko256_ctx* ctx, const uint64_t key[8]);
 void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len);
 void pikaseko256_final(const pikaseko256_ctx* ctx, uint64_t out[4]);
-// and pikaseko256_init_portable, pikaseko256_update_portable, pikaseko256_final_portable
+
+// 1 when the functions above run the AVX-512 code (checked once).
+int pikaseko256_uses_avx512(void);
 ```
+
+These functions use the AVX-512 implementation when the CPU and OS support
+AVX-512F, AVX-512BW and VAES and the portable one otherwise, with the same
+results. Each implementation is also available by name, with the suffix
+`_avx512` (the caller checks the CPU; absent from portable-only builds) or
+`_portable` (any CPU, any byte order, constant time). The streaming context
+is the same for both, so a hash can be continued with either. Setting
+`PIKASEKO256_FORCE_PORTABLE=1` before the first call selects the portable
+code.
 
 `include/pikaseko256_analysis.h` declares the step function alone, for
 analysis: `pikaseko256_steps(state, t0, nsteps)` runs nsteps steps from step
 index t0 on a 128-word state (word 8i + l is lane l of register i), and
-`pikaseko256_steps_portable` does the same in portable C.
+`pikaseko256_steps_avx512` and `pikaseko256_steps_portable` are the two
+implementations.
 
 Example:
 
@@ -129,8 +134,7 @@ Example:
 
 uint64_t key[8];      // 512-bit secret key, filled by the caller
 uint64_t digest[4];
-pikaseko256(msg, msg_len, key, digest);         // AVX-512 + VAES
-pikaseko256_portable(msg, msg_len, key, digest);  // any CPU, same result
+pikaseko256(msg, msg_len, key, digest);  // AVX-512 + VAES if available, else portable
 ```
 
 Byte order: key word i is bytes 8i .. 8i + 7 of a 64-byte key,
@@ -138,10 +142,6 @@ little-endian. The canonical 32-byte digest is out[0], out[1], out[2], out[3],
 each written little-endian. `pikaseko256_key_from_bytes(key, bytes64)` and
 `pikaseko256_digest_to_bytes(bytes32, out)` (inline, in the header) convert
 on any host.
-
-The functions without suffix need AVX-512F, AVX-512BW and VAES; there is no
-run-time CPU dispatch. The portable functions work everywhere and are
-independent of byte order.
 
 Notes for use:
 

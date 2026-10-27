@@ -16,7 +16,7 @@ RUN ?=
 ISA = -mavx512f -mavx512bw -mvaes
 # gcc: code hoisting and tree PRE make the step spill registers; switched off for the AVX-512 file.
 AVXOPT = $(shell $(CC) -fno-code-hoisting -fno-tree-pre -E -x c /dev/null >/dev/null 2>&1 && echo -fno-code-hoisting -fno-tree-pre)
-INC = -Iinclude -Isrc -Itest
+INC = -Iinclude -Isrc
 
 # Portable-only by default when the compiler does not target x86-64.
 TARGET_ARCH_X86_64 := $(shell $(CC) -dumpmachine 2>/dev/null | grep -q -E '^(x86_64|amd64)' && echo 1)
@@ -27,11 +27,11 @@ PORTABLE ?= 1
 endif
 
 ifeq ($(PORTABLE),0)
-OBJ = build/pikaseko256_avx512.o build/pikaseko256_portable.o
+OBJ = build/pikaseko256_avx512.o build/pikaseko256_portable.o build/pikaseko256_dispatch.o
 DEFS =
 BENCH = build/bench
 else
-OBJ = build/pikaseko256_portable.o
+OBJ = build/pikaseko256_portable.o build/pikaseko256_dispatch.o
 DEFS = -DPIKASEKO256_NO_AVX512
 BENCH =
 endif
@@ -54,11 +54,14 @@ build/pikaseko256_avx512.o: src/pikaseko256_avx512.c src/pikaseko256_consts.h in
 build/pikaseko256_portable.o: src/pikaseko256_portable.c src/pikaseko256_consts.h include/pikaseko256.h include/pikaseko256_analysis.h build/mode | build
 	$(CC) $(CFLAGS) $(INC) -c $< -o $@
 
+build/pikaseko256_dispatch.o: src/pikaseko256_dispatch.c include/pikaseko256.h include/pikaseko256_analysis.h build/mode | build
+	$(CC) $(CFLAGS) $(DEFS) $(INC) -c $< -o $@
+
 $(LIB): $(OBJ)
 	rm -f $@
 	$(AR) rcs $@ $^
 
-HDRS = include/pikaseko256.h include/pikaseko256_analysis.h test/cpu.h build/mode
+HDRS = include/pikaseko256.h include/pikaseko256_analysis.h build/mode
 build/test: test/test.c $(HDRS) $(LIB)
 	$(CC) $(CFLAGS) $(DEFS) $(INC) $< $(LIB) $(LDFLAGS) -o $@
 build/vectors: test/vectors.c $(HDRS) $(LIB)

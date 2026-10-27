@@ -376,7 +376,7 @@ differential and no key-independent collision (measured).
 * **Byte orders** are defined in SPEC.md: key words and output words are
   little-endian; the portable code is independent of host byte order.
 * **Streaming interface** (init, update, final), equal to the one-shot
-  function; no run-time CPU dispatch.
+  function; run-time CPU dispatch to the AVX-512 or the portable code.
 
 ## 13. Open problems and planned changes
 

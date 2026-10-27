@@ -33,7 +33,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   set(PIKASEKO256_WARNINGS -Wall -Wextra)
 endif()
 
-add_library(pikaseko256 STATIC src/pikaseko256_portable.c)
+add_library(pikaseko256 STATIC src/pikaseko256_portable.c src/pikaseko256_dispatch.c)
 target_include_directories(pikaseko256
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -56,7 +56,6 @@ if(PIKASEKO256_BUILD_TESTS)
   function(pikaseko256_program name source)
     add_executable(${name} ${source})
     target_link_libraries(${name} PRIVATE pikaseko256)
-    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test)
     target_compile_options(${name} PRIVATE ${PIKASEKO256_WARNINGS})
   endfunction()
   pikaseko256_program(pikaseko256_test test/test.c)

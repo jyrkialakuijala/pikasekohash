@@ -10,9 +10,6 @@
 
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
-#ifdef PIKASEKO256_NO_AVX512  // portable-only build: use the portable implementation
-#define pikaseko256_steps pikaseko256_steps_portable
-#endif
 
 static uint64_t rng = 0x243F6A8885A308D3ull;
 static uint64_t Next(void) { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return rng; }

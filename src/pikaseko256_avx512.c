@@ -213,7 +213,7 @@ INL void Finish(V r[16], unsigned t, const uint8_t* p, size_t n, uint64_t len, c
   _mm256_storeu_si256((__m256i*)out, _mm512_castsi512_si256(Fold(r)));
 }
 
-void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
+void pikaseko256_avx512(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
   const uint8_t* p = (const uint8_t*)data;
   Consts cs; LoadConsts(&cs);
   V r[16];
@@ -232,14 +232,14 @@ INL void StoreState(pikaseko256_ctx* ctx, const V r[16]) {
   for (int i = 0; i < 16; i++) _mm512_storeu_si512((void*)(ctx->r + 8 * i), r[i]);
 }
 
-void pikaseko256_init(pikaseko256_ctx* ctx, const uint64_t key[8]) {
+void pikaseko256_init_avx512(pikaseko256_ctx* ctx, const uint64_t key[8]) {
   V r[16];
   Init(r, key);
   StoreState(ctx, r);
   ctx->len = 0; ctx->t = 0; ctx->nbuf = 0;
 }
 
-void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len) {
+void pikaseko256_update_avx512(pikaseko256_ctx* ctx, const void* data, size_t len) {
   const uint8_t* p = (const uint8_t*)data;
   ctx->len += len;
   if (len < 256 - (size_t)ctx->nbuf) {
@@ -265,24 +265,24 @@ void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len) {
   StoreState(ctx, r);
 }
 
-void pikaseko256_final(const pikaseko256_ctx* ctx, uint64_t out[4]) {
+void pikaseko256_final_avx512(const pikaseko256_ctx* ctx, uint64_t out[4]) {
   Consts cs; LoadConsts(&cs);
   V r[16];
   LoadState(r, ctx);
   Finish(r, ctx->t, ctx->buf, ctx->nbuf, ctx->len, &cs, out);
 }
 
-void pikaseko256_unkeyed(const void* data, size_t len, uint64_t out[4]) {
-  pikaseko256(data, len, NULL, out);
+void pikaseko256_unkeyed_avx512(const void* data, size_t len, uint64_t out[4]) {
+  pikaseko256_avx512(data, len, NULL, out);
 }
 
-uint64_t pikaseko64(const void* data, size_t len, const uint64_t key[8]) {
+uint64_t pikaseko64_avx512(const void* data, size_t len, const uint64_t key[8]) {
   uint64_t out[4];
-  pikaseko256(data, len, key, out);
+  pikaseko256_avx512(data, len, key, out);
   return out[0];
 }
 
-void pikaseko256_steps(uint64_t state[128], unsigned t0, unsigned nsteps) {
+void pikaseko256_steps_avx512(uint64_t state[128], unsigned t0, unsigned nsteps) {
   Consts cs; LoadConsts(&cs);
   V r[16];
   for (int i = 0; i < 16; i++) r[i] = _mm512_loadu_si512((const void*)(state + 8 * i));

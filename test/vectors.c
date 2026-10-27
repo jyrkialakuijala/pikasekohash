@@ -7,7 +7,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "cpu.h"
 #include "pikaseko256.h"
 
 int main(void) {
@@ -16,12 +15,9 @@ int main(void) {
   const size_t lens[] = {0, 1, 55, 56, 63, 64, 255, 256, 1023, 1024, 1025, 4096};
   const uint64_t key[8] = {1, 2, 3, 4, 5, 6, 7, 8};
   uint64_t o[4], acc = 0;
-  void (*hash)(const void*, size_t, const uint64_t*, uint64_t*) = pikaseko256_portable;
-  void (*unkeyed)(const void*, size_t, uint64_t*) = pikaseko256_unkeyed_portable;
-#ifndef PIKASEKO256_NO_AVX512
-  if (PikasekoHaveAvx512()) { hash = pikaseko256; unkeyed = pikaseko256_unkeyed; }
-#endif
-  fprintf(stderr, "vectors: %s implementation\n", hash == pikaseko256_portable ? "portable" : "AVX-512");
+  void (*hash)(const void*, size_t, const uint64_t*, uint64_t*) = pikaseko256;
+  void (*unkeyed)(const void*, size_t, uint64_t*) = pikaseko256_unkeyed;
+  fprintf(stderr, "vectors: %s implementation\n", pikaseko256_uses_avx512() ? "AVX-512" : "portable");
   printf("PikasekoHash-256 test vectors (data byte i = i mod 256; lanes 0..3 as hex)\n");
   for (size_t i = 0; i < sizeof(lens) / sizeof(lens[0]); i++) {
     unkeyed(buf, lens[i], o);

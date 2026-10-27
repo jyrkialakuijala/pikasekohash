@@ -13,9 +13,6 @@
 #include <string.h>
 #include <time.h>
 #include "pikaseko256.h"
-#ifdef PIKASEKO256_NO_AVX512  // portable-only build: use the portable implementation
-#define pikaseko256 pikaseko256_portable
-#endif
 
 #define OB 256  // output bits
 typedef struct { uint64_t w[4]; } H256;

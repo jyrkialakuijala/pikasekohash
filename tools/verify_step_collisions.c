@@ -4,13 +4,12 @@
 // that give the same output after one step at step index t (see ANALYSIS.md).
 // Usage: verify_step_collisions FILE...   (each file: "# t = N" line, then X, Xp and Y,
 // 128 hex words each, register-major: word 8i + l is lane l of r_i).
-// Uses pikaseko256_steps when the CPU has AVX-512 + VAES, else pikaseko256_steps_portable.
+// Uses pikaseko256_steps (AVX-512 when the CPU has AVX-512 + VAES, else portable).
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "cpu.h"
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
 
@@ -27,11 +26,8 @@ static int ReadWords(char* line, uint64_t* w) {
 
 int main(int argc, char** argv) {
   int fails = 0;
-  void (*steps)(uint64_t*, unsigned, unsigned) = pikaseko256_steps_portable;
-#ifndef PIKASEKO256_NO_AVX512
-  if (PikasekoHaveAvx512()) steps = pikaseko256_steps;
-#endif
-  printf("step function: %s\n", steps == pikaseko256_steps_portable ? "portable" : "AVX-512");
+  void (*steps)(uint64_t*, unsigned, unsigned) = pikaseko256_steps;
+  printf("step function: %s\n", pikaseko256_uses_avx512() ? "AVX-512" : "portable");
   for (int f = 1; f < argc; f++) {
     FILE* fp = fopen(argv[f], "r");
     if (!fp) { printf("%s: cannot open\n", argv[f]); fails++; continue; }

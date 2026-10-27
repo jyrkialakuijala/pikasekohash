@@ -13,6 +13,11 @@ changes the output of the function changes the test vectors.
 * Streaming interface: `pikaseko256_init`, `pikaseko256_update`,
   `pikaseko256_final` and their `_portable` versions, sharing one context type.
   Output unchanged.
+* Run-time CPU dispatch: `pikaseko256`, `pikaseko256_unkeyed`, `pikaseko64`,
+  the streaming functions and `pikaseko256_steps` now pick the AVX-512 or the
+  portable code and work on every CPU and in every build. The AVX-512 code is
+  available by name with the suffix `_avx512` (API change: these were the
+  unsuffixed names). `pikaseko256_uses_avx512()` reports the choice.
 * `pikaseko256_key_from_bytes` and `pikaseko256_digest_to_bytes`: byte forms
   of the key and the digest, independent of the host byte order.
 

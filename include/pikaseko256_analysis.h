@@ -13,7 +13,8 @@ extern "C" {
 
 // Run nsteps steps, starting at step index t0, on a state of 16 registers x 8 lanes
 // (state[8 * i + l] = lane l of register r_i).
-void pikaseko256_steps(uint64_t state[128], unsigned t0, unsigned nsteps);  // AVX-512 + VAES
+void pikaseko256_steps(uint64_t state[128], unsigned t0, unsigned nsteps);  // dispatching, as pikaseko256
+void pikaseko256_steps_avx512(uint64_t state[128], unsigned t0, unsigned nsteps);  // AVX-512 + VAES
 void pikaseko256_steps_portable(uint64_t state[128], unsigned t0, unsigned nsteps);
 
 #ifdef __cplusplus
