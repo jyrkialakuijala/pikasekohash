@@ -9,7 +9,8 @@ test vectors, measurements on other CPUs, and bug reports.
 
     make            # everything, into build/
     make test       # must pass before any pull request
-    make bench      # speed (please give CPU, clock and compiler with numbers)
+    make bench      # speed (please give CPU, clock, governor and compiler with numbers;
+                    # ./build/bench --impl NAME for each implementation your CPU has)
     make battery    # statistical battery, a few minutes
 
 `make test` checks the test vectors, compares the AVX-512 and portable

@@ -196,7 +196,11 @@ AVX-512 code that was not faster.
 Sixteen 512-bit registers do not fit in the sixteen ymm or xmm registers, so
 these versions spill; they have not been measured on the CPUs they are meant
 for. The ARMv8 version (`src/pikaseko256_neon.c`, the same body with AESE and
-AESMC) is tested in CI on arm64 but not yet measured.
+AESMC) is tested in CI on arm64. The CI job "bench" runs the benchmark for
+every implementation on GitHub's x86-64 and arm64 runners and writes the
+numbers to the run summary; they come from shared virtual machines and are
+only indicative. Measurements on other CPUs, Intel ones in particular, are
+welcome (CONTRIBUTING.md).
 
 The portable implementation uses a bitsliced AES (constant time, no tables,
 no intrinsics). On the same machine (gcc -O2, `make bench-portable`) it takes

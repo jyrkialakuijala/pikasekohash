@@ -136,6 +136,32 @@ jobs:
           cmake --build build/msvc-portable --config Release
           ctest --test-dir build/msvc-portable -C Release --output-on-failure
 
+  bench:
+    # Informational: speed on the runners' CPUs (shared virtual machines, so noisy), written
+    # to the run summary. Never fails the build.
+    name: bench (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v5
+      - name: make and run the benchmark for every implementation the CPU has
+        run: |
+          make build/bench
+          {
+            echo "### $(uname -m): $(lscpu | sed -n 's/^Model name: *//p' | head -n1) ($(nproc) cores), $(cc --version | head -n1)"
+            for impl in avx512 avx2 aesni neon portable; do
+              max=1048576; [ $impl = portable ] && max=4096
+              out=$(./build/bench --impl $impl --max $max --reps 5 2>&1) || continue
+              echo '```'; echo "$out"; echo '```'
+              ./build/bench --impl $impl --max 256 --reps 5 --keyed | sed -n '3,9p' | sed 's/^/keyed /' | sed '1i```' | sed '$a```'
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
   s390x:
     name: s390x big-endian portable (qemu)
     runs-on: ubuntu-latest
