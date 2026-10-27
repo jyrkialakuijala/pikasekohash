@@ -42,6 +42,27 @@ follow: 8 steps in total.
   and add no non-linearity the attacker must pay for.
 * The zero key is the unkeyed hash. There is no domain separation yet.
 
+### Security targets (design goals, not claims)
+
+The levels the design aims for, so that an attack can be measured against
+them. None of them is claimed for version 0; the status column says what
+stands in the way.
+
+| mode | property | target | status |
+|---|---|---|---|
+| unkeyed, 256-bit | collision | 2^128 | open: semi-free-start collision of one absorption (section 5) |
+| unkeyed, 256-bit | second preimage | 2^256 | open; the 8192-bit state rules out the generic long-message attack |
+| unkeyed, 256-bit | preimage | 2^256 | open |
+| keyed (uniform 512-bit secret key), 256-bit | PRF / MAC: distinguishing, forgery | 2^128 work and queries; forgery success q / 2^256 for q tag guesses | open; free-start collisions are practical (section 4) but need a chosen chaining value |
+| keyed (uniform 512-bit secret key) | key recovery | 2^256 | open |
+| keyed, 64-bit output (`pikaseko64`) | hash flooding: collisions without the key | generic (2^32 queries per collision) | open; forgery success q / 2^64 |
+| any | length extension | not applicable | the output compresses the 8192-bit state (section 11) |
+
+Out of scope: related-key attacks with attacker-chosen key differences (the
+truncated-model bounds of section 10 are for information only), keys that
+are not uniform (in particular the all-zero key, which is the public
+unkeyed hash), and side channels other than timing.
+
 ## 1. Design rationale
 
 * **Throughput, not latency, sets the budget.** On Zen 5 the bulk loop is

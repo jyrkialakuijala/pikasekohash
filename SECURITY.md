@@ -6,7 +6,9 @@ PikasekoHash-256 is an experimental research design (version 0). It is not
 intended for production cryptographic use. Free-start collisions of its
 compression function and finalization are already practical (ANALYSIS.md,
 section 4), and the semi-free-start question is open (section 5). Treat
-every security property as unproven.
+every security property as unproven. The levels the design aims for, per
+mode, are listed under "Security targets" in ANALYSIS.md; an attack below
+one of them is a result worth reporting.
 
 There are no supported releases in the sense of security fixes: a weakness
 in the function itself is addressed by changing the design, which changes
