@@ -16,7 +16,8 @@ steps. Message packets of 64 bytes enter four at a time into a transversal
 set of registers, and one 32 x 32 -> 64-bit product per packet, formed from
 AES-mixed state, is xored in two steps later. Six final steps and a fold
 through two AES rounds produce the output. On a Zen 5 core it hashes
-24 GB/s in bulk, 1.7 times HighwayHash and twice single-threaded BLAKE3,
+24 GB/s in bulk on one thread, 1.7 times HighwayHash and twice BLAKE3 on one
+thread,
 and any message up to 128 bytes takes 36 ns. It passes every statistical
 test we applied. Our own cryptanalysis found no attack on the hash, but it
 found that the step function is not injective in a constructive way:
@@ -427,14 +428,22 @@ One core of a Ryzen 9 9950X3D (Zen 5, about 5.5 GHz under load), data in
 cache, gcc 15. The table measures repeated independent calls on one
 16 KiB buffer, with the same harness for all hashes.
 
-| hash | GB/s at 16 KiB |
-|---|---:|
-| xxh3-64 | 109.3 |
-| rapidhash | 60.9 |
-| PikasekoHash-256 | 23.5 |
-| HighwayHash-256 (AVX2) | 13.6 |
-| BLAKE3 (official C, AVX-512, one thread) | 11.8 |
-| SHA-256 (OpenSSL, SHA-NI) | 2.8 |
+| hash | kind | GB/s at 16 KiB |
+|---|---|---:|
+| xxh3-64 | non-cryptographic | 109.3 |
+| rapidhash | non-cryptographic | 60.9 |
+| PikasekoHash-256 | experimental, keyed or unkeyed | 23.5 |
+| HighwayHash-256 (AVX2) | keyed (PRF), not collision resistant without the key | 13.6 |
+| BLAKE3 (official C, AVX-512, one thread) | cryptographic | 11.8 |
+| SHA-256 (OpenSSL, SHA-NI) | cryptographic | 2.8 |
+
+The comparison is of one thread on data in cache. BLAKE3 is a tree hash and
+scales over cores (with several threads it overtakes PikasekoHash on large
+inputs), while PikasekoHash has no parallel mode. Only BLAKE3 and SHA-256 in
+the table are vetted cryptographic hashes; PikasekoHash is not, and the
+non-cryptographic hashes make no security claim at all. Short inputs are not
+compared here: PikasekoHash pays its nine-step minimum (36 ns) on every
+message, which is far more than the non-cryptographic hashes spend.
 
 The bulk loop takes about 14.5 cycles per 64 bytes, 24 GB/s at 1 MiB. The
 two AES pipes alone need 12 of them (96 AES rounds on 512-bit registers per
