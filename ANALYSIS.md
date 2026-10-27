@@ -355,13 +355,14 @@ differential and no key-independent collision (measured).
 
 ## 12. Deployment properties
 
-* **Constant time.** The AVX-512 implementation has no branches and no
-  memory accesses that depend on the key or the message contents; it
-  branches only on the length and on whether a key pointer is given. Its
-  instructions (VAESENC, VPMULUDQ, VPXORQ, VPTERNLOGQ, VPANDQ, VSHUFI64X2,
-  VPADDQ, and for the key VPERMQ and VPROLVQ; broadcasts, masked loads and
-  masked moves) have operand-independent latency on current x86 cores
-  (argued from public documentation). The portable implementation is a bitsliced
+* **Constant time.** The x86 implementations (AVX-512, AVX2 + VAES, AES-NI)
+  have no branches and no memory accesses that depend on the key or the
+  message contents; they branch, and choose copy lengths, only on the length
+  and on whether a key pointer is given. Their instructions (AES rounds,
+  32 x 32 -> 64-bit multiplies, xor, and, 64-bit adds, block shuffles,
+  VPTERNLOGQ, and in the AVX-512 key setup VPERMQ and VPROLVQ; loads, masked
+  loads and masked moves) have operand-independent latency on current x86
+  cores (argued from public documentation). The portable implementation is a bitsliced
   AES (the Boyar-Peralta S-box circuit on 64-bit words, ShiftRows and
   MixColumns as fixed shifts and masks), without tables and without
   data-dependent branches, loop bounds or shift amounts, so it has no table
@@ -400,7 +401,8 @@ differential and no key-independent collision (measured).
 7. An extendable output mode and a tree mode for several cores.
 8. Bounds with bit-level models, a super-box model or a stronger solver; a
    division-property bound for the output; measurements on Intel cores;
-   implementations for AES-NI with AVX2 and for ARMv8 crypto extensions.
+   an implementation for the ARMv8 crypto extensions (AVX2 + VAES and
+   AES-NI ones exist).
 
 Any of the changes 2, 3, 5, 6 or 7 changes the test vectors (7 only for
 the new modes).

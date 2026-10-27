@@ -16,6 +16,7 @@
 
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
+#include "pikaseko256_impl.h"
 
 #ifndef PIKASEKO256_NO_AVX512
 static int ForcePortable(void) {
@@ -59,9 +60,12 @@ static uint64_t Next(void) { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17
 typedef void HashFn(const void*, size_t, const uint64_t*, uint64_t*);
 typedef void UnkeyedFn(const void*, size_t, uint64_t*);
 
+typedef void StepsFn(uint64_t*, unsigned, unsigned);
+
 #ifndef PIKASEKO256_NO_AVX512
-// AVX-512 against portable: random data, three keys, three alignments. Returns mismatches.
-static long AvxVsPortable(const uint8_t* buf, const uint64_t* key18) {
+// An implementation against portable: random data, three keys, three alignments, every
+// length 0..2048. Returns mismatches.
+static long ImplVsPortable(const uint8_t* buf, const uint64_t* key18, HashFn* hash, const char* name) {
   long n = 0, bad = 0;
   for (int kc = 0; kc < 3; kc++) {
     uint64_t key[8];
@@ -71,28 +75,27 @@ static long AvxVsPortable(const uint8_t* buf, const uint64_t* key18) {
       for (int al = 0; al < 3; al++) {
         const uint8_t* d = buf + (al == 0 ? 0 : al == 1 ? 1 : 37);
         uint64_t a[4], p[4];
-        pikaseko256_avx512(d, len, kp, a);
+        hash(d, len, kp, a);
         pikaseko256_portable(d, len, kp, p);
         n++;
-        if (memcmp(a, p, 32)) { if (bad < 5) printf("FAIL AVX-512 != portable: len %zu key %d align %d\n", len, kc, al); bad++; }
-        if (pikaseko64_avx512(d, len, kp) != a[0] || pikaseko64_portable(d, len, kp) != p[0]) bad++;
+        if (memcmp(a, p, 32)) { if (bad < 5) printf("FAIL %s != portable: len %zu key %d align %d\n", name, len, kc, al); bad++; }
       }
   }
-  printf("AVX-512 vs portable: %ld inputs, %ld mismatches\n", n, bad);
+  printf("%s vs portable: %ld inputs, %ld mismatches\n", name, n, bad);
   return bad;
 }
 
-// Step function: AVX-512 against portable.
-static int StepsAvxVsPortable(void) {
+// Step function: an implementation against portable.
+static int StepsVsPortable(StepsFn* steps, const char* name) {
   int sb = 0;
   for (int trial = 0; trial < 64; trial++) {
     uint64_t s1[128], s2[128];
     for (int i = 0; i < 128; i++) s1[i] = s2[i] = Next();
-    pikaseko256_steps_avx512(s1, (unsigned)trial % 11, 1 + trial % 6);
+    steps(s1, (unsigned)trial % 11, 1 + trial % 6);
     pikaseko256_steps_portable(s2, (unsigned)trial % 11, 1 + trial % 6);
     sb += memcmp(s1, s2, sizeof s1) != 0;
   }
-  printf("step function AVX-512 vs portable: %s\n", sb ? "FAIL" : "ok");
+  printf("step function %s vs portable: %s\n", name, sb ? "FAIL" : "ok");
   return sb != 0;
 }
 #endif
@@ -184,7 +187,7 @@ static long Streaming(const uint8_t* buf, const uint64_t* key18, HashFn* hash, I
 }
 
 int main(void) {
-  static uint8_t buf[4200 + 64];
+  static uint8_t buf[4200 + 64], buf0[4200];
   int fails = 0;
   const int avx = pikaseko256_uses_avx512();
 #ifdef PIKASEKO256_NO_AVX512
@@ -198,7 +201,7 @@ int main(void) {
 #ifndef PIKASEKO256_NO_AVX512
   if (avx) { hash = pikaseko256_avx512; unkeyed = pikaseko256_unkeyed_avx512; }
 #endif
-  for (int i = 0; i < 4200; i++) buf[i] = (uint8_t)i;
+  for (int i = 0; i < 4200; i++) buf[i] = buf0[i] = (uint8_t)i;
   const uint64_t key18[8] = {1, 2, 3, 4, 5, 6, 7, 8}, zero[8] = {0};
   for (size_t i = 0; i < sizeof kVectors / sizeof kVectors[0]; i++) {
     const Vector* v = &kVectors[i];
@@ -220,7 +223,12 @@ int main(void) {
 
   for (size_t i = 0; i < sizeof buf; i++) buf[i] = (uint8_t)Next();
 #ifndef PIKASEKO256_NO_AVX512
-  if (avx) fails += AvxVsPortable(buf, key18) != 0;
+  if (avx) {
+    fails += ImplVsPortable(buf, key18, pikaseko256_avx512, "AVX-512") != 0;
+    int ok = 1;
+    for (size_t len = 0; len <= 300; len += 7) ok &= pikaseko64_avx512(buf, len, key18) == pikaseko64_portable(buf, len, key18);
+    if (!ok) { printf("FAIL pikaseko64_avx512\n"); fails++; }
+  }
 #endif
   if (!avx) fails += PortableSweep(buf, key18) != 0;
 
@@ -273,7 +281,7 @@ int main(void) {
       pikaseko256_steps(s, (unsigned)len, 2); pikaseko256_steps_portable(u, (unsigned)len, 2);
       ok &= !memcmp(s, u, sizeof s);
     }
-    printf("dispatching functions (%s): %s\n", pikaseko256_uses_avx512() ? "AVX-512" : "portable", ok ? "ok" : "FAIL");
+    printf("dispatching functions (%s): %s\n", pikaseko256_implementation(), ok ? "ok" : "FAIL");
     fails += !ok;
   }
 
@@ -294,7 +302,28 @@ int main(void) {
   }
 
 #ifndef PIKASEKO256_NO_AVX512
-  if (avx) fails += StepsAvxVsPortable();
+  if (avx) fails += StepsVsPortable(pikaseko256_steps_avx512, "AVX-512");
+  // The AVX2 + VAES and AES-NI implementations, where the CPU has them.
+  {
+    const int level = pikaseko256_cpu_level();
+    struct { int level; const char* name; HashFn* hash; InitFn* init; UpdateFn* update; FinalFn* final; StepsFn* steps; } impl[2] = {
+      {2, "AVX2", pikaseko256_avx2, pikaseko256_init_avx2, pikaseko256_update_avx2, pikaseko256_final_avx2, pikaseko256_steps_avx2},
+      {1, "AES-NI", pikaseko256_aesni, pikaseko256_init_aesni, pikaseko256_update_aesni, pikaseko256_final_aesni, pikaseko256_steps_aesni}};
+    for (int m = 0; m < 2; m++) {
+      if (level < impl[m].level) { printf("%s tests skipped (not supported or not selected)\n", impl[m].name); continue; }
+      int vb = 0;
+      for (size_t i = 0; i < sizeof kVectors / sizeof kVectors[0]; i++) {
+        uint64_t a[4];
+        impl[m].hash(buf0, kVectors[i].len, kVectors[i].keyed ? key18 : NULL, a);
+        vb += memcmp(a, kVectors[i].h, 32) != 0;
+      }
+      printf("test vectors (%s): %s\n", impl[m].name, vb ? "FAIL" : "ok");
+      fails += vb != 0;
+      fails += ImplVsPortable(buf, key18, impl[m].hash, impl[m].name) != 0;
+      fails += Streaming(buf, key18, impl[m].hash, impl[m].init, impl[m].update, impl[m].final, 2100, 7, impl[m].name) != 0;
+      fails += StepsVsPortable(impl[m].steps, impl[m].name);
+    }
+  }
 #endif
   fails += StepsPortableConsistency();
   if (!avx) printf("(AVX-512 tests were skipped)\n");

@@ -29,9 +29,9 @@ static inline void pikaseko256_digest_to_bytes(uint8_t bytes[32], const uint64_t
   for (int i = 0; i < 32; i++) bytes[i] = (uint8_t)(out[i / 8] >> (8 * (i % 8)));
 }
 
-// Hash functions. They use the AVX-512 implementation when the library has it and the CPU
-// and OS support AVX512F, AVX512BW and VAES (checked once, at the first call), and the
-// portable implementation otherwise. The results are the same either way.
+// Hash functions. They use the fastest implementation the CPU and OS support (checked once,
+// at the first call): AVX-512 + VAES, AVX2 + VAES or AES-NI on x86-64, else the portable
+// one. The results are the same either way.
 void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
 void pikaseko256_unkeyed(const void* data, size_t len, uint64_t out[4]);
 uint64_t pikaseko64(const void* data, size_t len, const uint64_t key[8]);  // lane 0 of the digest
@@ -50,9 +50,11 @@ void pikaseko256_init(pikaseko256_ctx* ctx, const uint64_t key[8]);  // key NULL
 void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len);
 void pikaseko256_final(const pikaseko256_ctx* ctx, uint64_t out[4]);
 
-// 1 when the functions above use the AVX-512 implementation. Setting the environment
-// variable PIKASEKO256_FORCE_PORTABLE (to anything but "0") before the first call selects
-// the portable implementation.
+// The implementation the functions above use: "AVX-512 + VAES", "AVX2 + VAES", "AES-NI"
+// or "portable", and whether it is the AVX-512 one. Setting the environment variable
+// PIKASEKO256_FORCE_PORTABLE (to anything but "0") before the first call selects the
+// portable implementation.
+const char* pikaseko256_implementation(void);
 int pikaseko256_uses_avx512(void);
 
 // The implementations by name. The _avx512 functions need AVX512F, AVX512BW and VAES (the

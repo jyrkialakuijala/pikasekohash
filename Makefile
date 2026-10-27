@@ -27,7 +27,7 @@ PORTABLE ?= 1
 endif
 
 ifeq ($(PORTABLE),0)
-OBJ = build/pikaseko256_avx512.o build/pikaseko256_portable.o build/pikaseko256_dispatch.o
+OBJ = build/pikaseko256_avx512.o build/pikaseko256_avx2.o build/pikaseko256_aesni.o build/pikaseko256_portable.o build/pikaseko256_dispatch.o
 DEFS =
 BENCH = build/bench
 else
@@ -51,10 +51,17 @@ build/mode: FORCE | build
 build/pikaseko256_avx512.o: src/pikaseko256_avx512.c src/pikaseko256_consts.h include/pikaseko256.h include/pikaseko256_analysis.h build/mode | build
 	$(CC) $(CFLAGS) $(AVXOPT) $(ISA) $(INC) -c $< -o $@
 
+SIMD_DEPS = src/pikaseko256_simd.h src/pikaseko256_impl.h src/pikaseko256_consts.h include/pikaseko256.h include/pikaseko256_analysis.h build/mode
+build/pikaseko256_avx2.o: src/pikaseko256_avx2.c $(SIMD_DEPS) | build
+	$(CC) $(CFLAGS) -mavx2 -mvaes -maes $(INC) -c $< -o $@
+
+build/pikaseko256_aesni.o: src/pikaseko256_aesni.c $(SIMD_DEPS) | build
+	$(CC) $(CFLAGS) -maes $(INC) -c $< -o $@
+
 build/pikaseko256_portable.o: src/pikaseko256_portable.c src/pikaseko256_consts.h include/pikaseko256.h include/pikaseko256_analysis.h build/mode | build
 	$(CC) $(CFLAGS) $(INC) -c $< -o $@
 
-build/pikaseko256_dispatch.o: src/pikaseko256_dispatch.c include/pikaseko256.h include/pikaseko256_analysis.h build/mode | build
+build/pikaseko256_dispatch.o: src/pikaseko256_dispatch.c src/pikaseko256_impl.h include/pikaseko256.h include/pikaseko256_analysis.h build/mode | build
 	$(CC) $(CFLAGS) $(DEFS) $(INC) -c $< -o $@
 
 $(LIB): $(OBJ)

@@ -44,10 +44,11 @@ is welcome; see [SECURITY.md](SECURITY.md).
 ## Requirements
 
 * A C11 compiler (gcc or clang) and `make`.
-* For the fast implementation: a compiler that supports
-  `-mavx512f -mavx512bw -mvaes`, and a CPU with AVX-512F, AVX-512BW and
-  VAES to run it. The library checks the CPU at run time and falls back to
-  the portable implementation.
+* For the fast implementations: a compiler that supports
+  `-mavx512f -mavx512bw -mvaes -mavx2 -maes`. The library checks the CPU at
+  run time and uses the fastest implementation it supports: AVX-512 + VAES,
+  AVX2 + VAES (e.g. Zen 3, Alder Lake), AES-NI (any x86-64 CPU since about
+  2010), or the portable one.
 * The portable implementation is plain C and runs on any CPU and byte order.
 
 ## Build and test
@@ -173,6 +174,19 @@ With clang 21 the AVX-512 code is about 10% slower on short inputs (40 ns at
 
 Every message costs at least 9 steps (288 AES rounds on 512-bit vectors),
 which sets the latency floor for short inputs.
+
+On CPUs without AVX-512 the library uses narrower code (`make bench` then
+reports it; `./build/bench --impl avx2` or `--impl aesni` measures it on any
+CPU that has it). Measured on the same Zen 5 core, unkeyed:
+
+| implementation | 0 to 128 bytes | 1 KiB | bulk |
+|---|---:|---:|---:|
+| AVX2 + VAES (two 256-bit vectors per register) | 93 ns | 0.32 µs | 9 to 10 GB/s |
+| AES-NI (four 128-bit vectors per register) | 240 ns | 1.2 µs | 2.4 GB/s |
+
+Sixteen 512-bit registers do not fit in the sixteen ymm or xmm registers, so
+these versions spill; they have not been measured on the CPUs they are meant
+for.
 
 The portable implementation uses a bitsliced AES (constant time, no tables,
 no intrinsics). On the same machine (gcc -O2, `make bench-portable`) it takes

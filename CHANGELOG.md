@@ -18,6 +18,9 @@ changes the output of the function changes the test vectors.
   portable code and work on every CPU and in every build. The AVX-512 code is
   available by name with the suffix `_avx512` (API change: these were the
   unsuffixed names). `pikaseko256_uses_avx512()` reports the choice.
+* AVX2 + VAES and AES-NI implementations (`src/pikaseko256_simd.h`), chosen
+  by the dispatch on x86-64 CPUs without AVX-512; `pikaseko256_implementation()`
+  names the choice; `bench --impl` measures any of them.
 * `pikaseko256_key_from_bytes` and `pikaseko256_digest_to_bytes`: byte forms
   of the key and the digest, independent of the host byte order.
 
