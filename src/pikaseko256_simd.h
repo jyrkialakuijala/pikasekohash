@@ -17,7 +17,6 @@
 #include <string.h>
 
 #include "pikaseko256.h"
-#include "pikaseko256_analysis.h"
 #include "pikaseko256_compiler.h"
 #include "pikaseko256_consts.h"
 #include "pikaseko256_step0.h"
@@ -72,7 +71,8 @@ INL void StepAny(R r[16], unsigned t, const Consts* cs) {
 }
 
 // As in pikaseko256_avx512.c, the state is kept one step ahead: an absorption at step index
-// t starts after step t and ends with step t + 3.
+// t starts after step t and ends with step t + 3; its products are formed after step t + 2
+// and xored in after step t + 3.
 
 // Absorption of np (1..4) packets at phase p = t mod 4. np depends on the length only.
 INL void Absorb(R r[16], const int p, const R* P, const int np, const Consts* cs) {
@@ -81,16 +81,16 @@ INL void Absorb(R r[16], const int p, const R* P, const int np, const Consts* cs
   if (np > 2) r[10] = Add(r[10], P[2]);
   if (np > 3) r[15] = Add(r[15], P[3]);
   Step(r, (p + 1) & 3, cs);
+  Step(r, (p + 2) & 3, cs);
   R q0 = Mul(r[1], r[0]), q1 = r[0], q2 = r[0], q3 = r[0];
   if (np > 1) q1 = Mul(r[4], r[5]);
   if (np > 2) q2 = Mul(r[11], r[10]);
   if (np > 3) q3 = Mul(r[14], r[15]);
-  Step(r, (p + 2) & 3, cs);
+  Step(r, (p + 3) & 3, cs);
   r[3] = Xor(r[3], q0);
   if (np > 1) r[6] = Xor(r[6], q1);
   if (np > 2) r[9] = Xor(r[9], q2);
   if (np > 3) r[12] = Xor(r[12], q3);
-  Step(r, (p + 3) & 3, cs);
 }
 
 INL void AbsorbAny(R r[16], unsigned t, const R* P, int np, const Consts* cs) {
@@ -172,7 +172,7 @@ static void Finish(R r[16], unsigned t, const uint8_t* m, size_t n, uint64_t len
   memcpy(out, w, 32);
 }
 
-INL void Init(R r[16], const uint64_t key[8]) {
+INL void Init(R r[16], const uint64_t key[8], uint64_t dom) {
   // r_i[l] = (phi + i pi) * (phi + l e), 32 x 32 -> 64 bits: one multiply per vector.
   static const uint64_t kLane[8] = {
       (uint32_t)(PIKASEKO_PHI + 0u * PIKASEKO_E), (uint32_t)(PIKASEKO_PHI + 1u * PIKASEKO_E),
@@ -191,24 +191,27 @@ INL void Init(R r[16], const uint64_t key[8]) {
     memcpy(k2 + 8, key, 64);
     for (int i = 0; i < 16; i++) r[i] = Xor(r[i], Rotl(Load(k2 + (i & 7)), 4 * i));  // 4i < 64
   }
+  const uint64_t d[8] = {dom, 0, 0, 0, 0, 0, 0, 0};  // the domain word, lane 0 of r_2
+  r[2] = Xor(r[2], Load(d));
 }
 
 // The state after step 0: computed for a key, loaded for the unkeyed hash.
-static void Start(R r[16], const uint64_t key[8], const Consts* cs) {
+static void Start(R r[16], const uint64_t key[8], uint64_t dom, const Consts* cs) {
   if (key) {  // depends on the pointer only, never on the key value
-    Init(r, key);
+    Init(r, key, dom);
     Step(r, 0, cs);
   } else {
-    for (int i = 0; i < 16; i++) r[i] = Load(kPikasekoUnkeyedStep0 + 8 * i);
+    const uint64_t* s0 = kPikasekoUnkeyedStep0[dom == PIKASEKO_DOMAIN_UNKEYED64];
+    for (int i = 0; i < 16; i++) r[i] = Load(s0 + 8 * i);
   }
 }
 
-void NAME(pikaseko256)(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
+void NAME(pikaseko_hash)(const void* data, size_t len, const uint64_t key[8], uint64_t dom, uint64_t out[4]) {
   const uint8_t* p = (const uint8_t*)data;
   Consts cs;
   LoadConsts(&cs);
   R r[16];
-  Start(r, key, &cs);
+  Start(r, key, dom, &cs);
   const unsigned t = AbsorbGroups(r, 0, p, len / 256, &cs);
   Finish(r, t, p + (len - len % 256), len % 256, len, &cs, out);
 }
@@ -220,16 +223,16 @@ static void StoreState(pikaseko256_ctx* ctx, const R r[16]) {
   for (int i = 0; i < 16; i++) Store(ctx->r + 8 * i, r[i]);
 }
 
-void NAME(pikaseko256_init)(pikaseko256_ctx* ctx, const uint64_t key[8]) {
+void NAME(pikaseko_init)(pikaseko256_ctx* ctx, const uint64_t key[8], uint64_t dom) {
   Consts cs;
   LoadConsts(&cs);
   R r[16];
-  Start(r, key, &cs);
+  Start(r, key, dom, &cs);
   StoreState(ctx, r);
   ctx->len = 0; ctx->t = 0; ctx->nbuf = 0;
 }
 
-void NAME(pikaseko256_update)(pikaseko256_ctx* ctx, const void* data, size_t len) {
+void NAME(pikaseko_update)(pikaseko256_ctx* ctx, const void* data, size_t len) {
   const uint8_t* p = (const uint8_t*)data;
   ctx->len += len;
   if (len < 256 - (size_t)ctx->nbuf) {
@@ -256,7 +259,7 @@ void NAME(pikaseko256_update)(pikaseko256_ctx* ctx, const void* data, size_t len
   StoreState(ctx, r);
 }
 
-void NAME(pikaseko256_final)(const pikaseko256_ctx* ctx, uint64_t out[4]) {
+void NAME(pikaseko_final)(const pikaseko256_ctx* ctx, uint64_t out[4]) {
   Consts cs;
   LoadConsts(&cs);
   R r[16];
@@ -264,7 +267,7 @@ void NAME(pikaseko256_final)(const pikaseko256_ctx* ctx, uint64_t out[4]) {
   Finish(r, ctx->t, ctx->buf, ctx->nbuf, ctx->len, &cs, out);
 }
 
-void NAME(pikaseko256_steps)(uint64_t state[128], unsigned t0, unsigned nsteps) {
+void NAME(pikaseko_steps)(uint64_t state[128], unsigned t0, unsigned nsteps) {
   Consts cs;
   LoadConsts(&cs);
   R r[16];

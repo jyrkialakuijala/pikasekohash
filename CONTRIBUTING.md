@@ -25,7 +25,10 @@ the schedule, padding, the fold, the key handling) must update, in the same
 pull request:
 
 * [SPEC.md](SPEC.md): the definition and the test vectors in section 11;
-* `test/test_vectors.txt` (regenerate with `./build/vectors > test/test_vectors.txt`);
+* `ref/pikaseko256.py`, the Python reference, first; then
+  `test/test_vectors.txt` (`python3 ref/pikaseko256.py --print-vectors > test/test_vectors.txt`,
+  which `./build/vectors` must reproduce) and, if the initial value or the
+  first step changes, `src/pikaseko256_step0.h` (`python3 tools/gen_step0.py`);
 * [ANALYSIS.md](ANALYSIS.md): every section whose measurements or bounds
   the change affects, with the result marked proven, measured or argued, and
   the planned-changes list in section 13;

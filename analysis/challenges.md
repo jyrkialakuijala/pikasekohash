@@ -1,25 +1,30 @@
 # Cryptanalysis challenges
 
-Concrete targets on PikasekoHash-256 version 0 and reduced versions of it,
+Concrete targets on PikasekoHash-256 version 1 and reduced versions of it,
 ordered from the most likely to fall to the full function. Each says what is
 known, so that a result can be placed. Results are credited in ANALYSIS.md;
 see [SECURITY.md](../SECURITY.md) for how to report. There is no prize.
 
 Reduced versions change only the number of final steps f (6 in the full
 function). The steps after the last packet injection are 2 + f: the last two
-steps of the last absorption, then the final steps.
+steps of the last absorption, then the final steps. The products of the last
+absorption are xored in after the first final step (before the fold when
+f = 0). What is "known" below was measured on version 0, which formed the
+products one step earlier; the step and the fold are the same.
 
 ## Checking a solution
 
 The Python reference [ref/pikaseko256.py](../ref/pikaseko256.py) computes
 every variant below:
 
-    python3 ref/pikaseko256.py --hex <message hex> [--key <64 key bytes hex>] [--final f]
+    python3 ref/pikaseko256.py --hex <message hex> [--key <key bytes hex>] [--bits 64] [--final f]
 
 and its functions `step(r, t)` and `absorb(r, t, packets)` compute one step
 and one absorption on a state given as sixteen 64-byte vectors, as in
-SPEC.md. The C entry point `pikaseko256_steps` in
-`include/pikaseko256_analysis.h` runs steps on a state of 128 words, and
+SPEC.md. `absorb` is the self-contained form: step t, the injection, steps
+t + 1 and t + 2, the products, step t + 3, and the products xored in. The
+C entry point `pikaseko256_steps` in `include/pikaseko256_analysis.h` runs
+steps on a state of 128 words, and
 `tools/verify_step_collisions.c` shows how a state-level claim is checked
 (the one-step collisions of `analysis/data/`).
 

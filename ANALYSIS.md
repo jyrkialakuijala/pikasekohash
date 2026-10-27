@@ -1,10 +1,16 @@
 # PikasekoHash-256: security and quality analysis
 
-This document collects what is known about PikasekoHash-256 version 0 as
+This document collects what is known about PikasekoHash-256 version 1 as
 defined in [SPEC.md](SPEC.md). It summarises the designer's own measurements
 and five targeted reviews made in October 2026 (reports in
 [analysis/reviews/](analysis/reviews/)). None of this replaces outside
 cryptanalysis.
+
+Version 1 keeps the step, the constants, the padding and the fold of version
+0 and changes three things: a domain word in the initial value, keys of any
+length, and products formed one step later (SPEC.md, sections 4 and 7). The
+reviews and most measurements below were made on version 0; section 15 says
+which results carry over and what was measured again.
 
 Labels, as in the reviews:
 
@@ -38,9 +44,11 @@ follow: 8 steps in total.
   attacker cannot steer; with a chosen state an attacker solves a whole step.
 * The largest number of post-injection steps covered by any output
   distinguisher found is 2 of 8 (margin 6 steps).
-* In the unkeyed hash, the multiplications can be steered by the attacker
-  and add no non-linearity the attacker must pay for.
-* The zero key is the unkeyed hash. There is no domain separation yet.
+* In version 0 the unkeyed attacker could steer the multiplications; version
+  1 forms them two steps after the injection, which removes that handle
+  (argued, section 7).
+* Unkeyed and keyed hashing, every key length and both digest widths are
+  separated by a domain word in the initial value.
 
 ### Security targets (design goals, not claims)
 
@@ -53,15 +61,16 @@ stands in the way.
 | unkeyed, 256-bit | collision | 2^128 | open: semi-free-start collision of one absorption (section 5) |
 | unkeyed, 256-bit | second preimage | 2^256 | open; the 8192-bit state rules out the generic long-message attack |
 | unkeyed, 256-bit | preimage | 2^256 | open |
-| keyed (uniform 512-bit secret key), 256-bit | PRF / MAC: distinguishing, forgery | 2^128 work and queries; forgery success q / 2^256 for q tag guesses | open; free-start collisions are practical (section 4) but need a chosen chaining value |
-| keyed (uniform 512-bit secret key) | key recovery | 2^256 | open |
+| keyed (uniform secret key of k = 16..64 bytes), 256-bit | PRF / MAC: distinguishing, forgery | 2^min(128, 4k) work and queries; forgery success q / 2^256 for q tag guesses | open; free-start collisions are practical (section 4) but need a chosen chaining value |
+| keyed (uniform secret key of k = 16..64 bytes) | key recovery | 2^min(256, 8k) | open |
 | keyed, 64-bit output (`pikaseko64`) | hash flooding: collisions without the key | generic (2^32 queries per collision) | open; forgery success q / 2^64 |
 | any | length extension | not applicable | the output compresses the 8192-bit state (section 11) |
 
 Out of scope: related-key attacks with attacker-chosen key differences (the
 truncated-model bounds of section 10 are for information only), keys that
-are not uniform (in particular the all-zero key, which is the public
-unkeyed hash), and side channels other than timing.
+are not uniform or shorter than 16 bytes, and side channels other than
+timing. Keys of different lengths give different functions (the length is in
+the domain word), so a key cannot be extended or truncated into another.
 
 ## 1. Design rationale
 
@@ -136,9 +145,11 @@ GF(2) rank 2048 on the state.
 
 * The 256-bit battery (`tools/battery.c`: avalanche, bit independence,
   differential, sparse keys, cyclic, two-byte, window, permutation, seed and
-  length tests, with Poisson tails for small expectations) passes for the
-  final design with 6, 2, 1 and 0 final steps. The run of the final design
-  with `make battery` is in `analysis/results/battery.txt`.
+  length tests, with Poisson tails for small expectations) passed for
+  version 0 with 6, 2, 1 and 0 final steps, and passes for version 1 with
+  its 6 final steps (the run with `make battery` is in
+  `analysis/results/battery.txt`). Reduced versions of version 1 were not
+  re-run, except the window test of section 7.
 * Structured-input histograms of the final design (2^34 inputs into 2^20
   buckets, two input layouts) and 768 small bucket tests (2^24 inputs into
   2^16 buckets) put the hash inside the random null; SHA-256, BLAKE3,
@@ -239,21 +250,35 @@ three steps for 48 spread variables, so the whole state is a proven zero sum
 over 2^48 inputs after three steps (proven); no output bit is provably
 balanced.
 
-## 7. Products in the unkeyed mode (measured)
+## 7. Products in the unkeyed mode (measured in version 0, argued in version 1)
 
-The product operands are read after step t+1, one AES round (or a linear key
-path) from the freely chosen feed register. With the state known (unkeyed
-hash), inverting that round sets the operands: all four products of an
-absorption are forced to zero in milliseconds. This is not a collision (the
-packet still enters through the addition), but in the unkeyed mode the
-products add no non-linearity an attacker must pay for. All unkeyed bounds
-below are stated for "any product behaviour" where this matters. With a
-secret key the state is unknown and the products cannot be steered.
+In version 0 the product operands were read after step t+1, one AES round (or
+a linear key path) from the freely chosen feed register. With the state known
+(unkeyed hash), inverting that round set the operands: all four products of
+an absorption were forced to zero in milliseconds (measured). This was not a
+collision (the packet still enters through the addition), but in the unkeyed
+mode the products added no non-linearity an attacker had to pay for.
 
-Reading the operands one step later (after step t+2) was measured to cost
-nothing and was argued to remove the steering, but it conflicts with the
-current finalization in one statistic at two final steps; it is not part of
-version 0.
+Version 1 reads the operands after step t+2 and xors the products in after
+step t+3. Each operand is then two steps (four AES rounds, with keys from
+three other registers of each group) away from the packet, and the second of
+those steps already mixes in registers the packet has not reached, so
+setting an operand means solving a step of the state for it (argued; not
+measured). The bounds below are still stated for "any product behaviour"
+where this matters. With a secret key the state is unknown and the products
+cannot be steered in either version.
+
+The change was measured in the development repository as variant F174 (no
+speed cost) and, with the version 0 finalization, F176. F176 passed the
+256-bit battery at 6 and 1 final steps; at 2 final steps one structured-input
+"window" test reached z = +4.5. That test uses fixed inputs (a zero message,
+a fixed key and a 20-bit counter), so it was repeated for 32 random keys on
+F176 and on version 0, both at 2 final steps: 11,520 and 26,880 sub-tests per
+variant (32- and 72-byte messages) gave z with mean within 0.07 of 0 and
+standard deviation 0.94 to 1.05 for every output slice, and as many |z| > 3.5
+as expected by chance (4 and 16 against 5.4 and 12.5; version 0: 10 and 11).
+The single +4.5 was a property of that one input set, not of the design
+(measured, October 2026).
 
 ## 8. The fold (measured and argued)
 
@@ -370,10 +395,11 @@ differential and no key-independent collision (measured).
   multiply, as on current 64-bit CPUs. Whether a given compiler preserves
   this is not verified. There is no lazy initialization.
 * **Length is not hidden.** The running time depends on the message length.
-* **No domain separation.** The zero key, the NULL key and the unkeyed hash
-  are the same function, and the 64-bit hash is the first word of the 256-bit
-  hash. An application that ends up with an all-zero key gets the public
-  hash and a forgeable MAC without any error.
+* **Domain separation.** The domain word (SPEC.md, section 4) separates the
+  unkeyed hash, keyed hashes with each key length (an empty or all-zero key
+  is a key like any other, never the public hash), keys longer than 64 bytes
+  (hashed first, flagged), and the 256-bit and 64-bit digests. Unkeyed
+  hashing has its own functions; there is no NULL-key convention.
 * **Byte orders** are defined in SPEC.md: key words and output words are
   little-endian; the portable code is independent of host byte order.
 * **Streaming interface** (init, update, final), equal to the one-shot
@@ -390,22 +416,25 @@ differential and no key-independent collision (measured).
    alternative, a permutation step, was measured 28% slower and lowers the
    truncated-model bounds (last step alone >= 20); with delayed products its
    absorption is not a bijection either, so it would need a redesign.
-3. **Domain separation word**: a parameter word (version, keyed flag, output
-   length, mode) xored into the initial value, so that keyed with the zero
-   key differs from unkeyed and the 64-bit and 256-bit outputs are separated.
-4. (Done after version 0: streaming interface, init, update, final, with
-   the same schedule and the same output.)
-5. Product timing: read the operands after step t+2 to remove unkeyed
-   steering, once its statistical artefact at two final steps is understood.
+3. (Done in version 1: the domain word, keys of any length, separate
+   unkeyed functions.)
+4. (Done: streaming interface, init, update, final.)
+5. (Done in version 1: products read after step t+2, section 7.)
 6. A fold that mixes the block halves (section 8).
-7. An extendable output mode and a tree mode for several cores.
+7. An extendable output mode and a tree mode for several cores; the domain
+   word has room for them.
 8. Bounds with bit-level models, a super-box model or a stronger solver; a
    division-property bound for the output; measurements on Intel cores;
    measurements of the AVX2 + VAES, AES-NI and ARMv8 implementations on the
    CPUs they are meant for.
+9. Repeat the version 0 reviews (analysis/reviews/) on version 1, in
+   particular the semi-free-start question with the new product timing.
+10. Not planned: mixing the key in again before the fold. The key enters the
+    8192-bit state at the start, as in KMAC and keyed BLAKE3; recovering that
+    state from 256-bit outputs is not a known risk (argued).
 
-Any of the changes 2, 3, 5, 6 or 7 changes the test vectors (7 only for
-the new modes).
+Any of the changes 2, 6 or 7 changes the test vectors (7 only for the new
+modes).
 
 ## 14. Review history
 
@@ -416,3 +445,29 @@ and the nonlinear fold. The second round (five reviews in
 [analysis/reviews/](analysis/reviews/)) examined the final design and found
 the one-step collisions. Permutation-step variants were measured during
 development and not adopted.
+
+## 15. Version 1: what carries over from version 0
+
+Version 1 changes the initial value (domain word, key handling) and the
+timing of the products; the step, the constants, the padding and the fold
+are unchanged.
+
+* **Unchanged, still valid**: everything about the step alone: the one-step
+  collisions of section 4 (checked by `make test`), the diffusion of
+  section 2 (`tools/diffusion.c` uses only the step), the single-step and
+  finalization bounds of sections 9 and 10, and the fold (section 8).
+* **Changed, argued**: the products now leave the unkeyed attacker no handle
+  (section 7). After the last packet injection the output still sees 2 + 6
+  steps; after the last product injection it sees 5 (version 0: 6).
+* **Changed, measured again**: the test vectors, reproduced by the C
+  implementations and by the Python reference written from SPEC.md; the
+  structured-input "window" collision test over 32 keys at two final steps
+  (section 7); the 256-bit statistical battery (`make battery`, keyed with
+  a 64-byte key: pass, worst 32-bit collision z +3.3; output in
+  analysis/results/battery.txt).
+* **Not yet repeated**: the review reports (analysis/reviews/), the margin
+  measurements of section 6, the histogram statistics
+  (analysis/results/statistics.txt) and the trail and integral solver runs
+  for absorptions. The semi-free-start question (section 5) must be
+  revisited first, since the inbound phases it considers now meet the
+  products one step later.

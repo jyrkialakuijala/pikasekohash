@@ -4,10 +4,11 @@ PikasekoHash-256 is an experimental 256-bit hash function built from AES
 rounds over a wide state of sixteen 512-bit registers (8192 bits). It is
 designed for CPUs with AVX-512 and VAES (AMD Zen 4 and Zen 5, Intel Ice Lake
 and later); on one Zen 5 core it hashes about 24 GB/s and a short message
-in about 36 ns. It can be used keyed (512-bit key) or unkeyed.
-A portable C implementation gives bit-identical results on any platform.
-This repository holds the specification, both implementations, test
-vectors, and the security analysis made so far.
+in about 37 ns. It can be used unkeyed or keyed (a key of any length), with
+a 256-bit or a 64-bit digest. Implementations for AVX2, AES-NI, ARMv8 and
+portable C give bit-identical results on any platform. This repository holds
+the specification, the implementations, test vectors, and the security
+analysis made so far.
 
 Author: Jyrki Alakuijala (co-author of HighwayHash).
 
@@ -15,7 +16,8 @@ Author: Jyrki Alakuijala (co-author of HighwayHash).
 
 ## Status: experimental, not for production cryptographic use
 
-This is version 0 of a research design. Do not use it where a vetted
+This is version 1 of a research design (release 0.1.0; version 0 is release
+0.0.2). Do not use it where a vetted
 cryptographic hash or MAC is required (use SHA-256, SHA-3, BLAKE3 or
 similar). Known facts:
 
@@ -32,8 +34,6 @@ similar). Known facts:
   claim should be made before that is settled.
 * Proven bounds exist only in byte-level truncated models, and they count
   probability only for the steps an attacker cannot steer.
-* There is no domain separation: the all-zero key gives the public unkeyed
-  hash.
 * The design may still change (section 13 of [ANALYSIS.md](ANALYSIS.md)).
   Test vectors will then change too.
 
@@ -100,75 +100,74 @@ Other tools:
 `include/pikaseko256.h`:
 
 ```c
-// 256-bit hash. key: eight 64-bit words, or NULL for the zero key.
-void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
-// Same as pikaseko256 with the zero key.
-void pikaseko256_unkeyed(const void* data, size_t len, uint64_t out[4]);
-// 64-bit hash: out[0] of pikaseko256.
-uint64_t pikaseko64(const void* data, size_t len, const uint64_t key[8]);
+// One-shot. digest: 32 bytes. key: any number of bytes (NULL if key_len is 0).
+void pikaseko256_unkeyed(const void* data, size_t len, uint8_t digest[32]);
+void pikaseko256_keyed(const void* data, size_t len, const void* key, size_t key_len, uint8_t digest[32]);
+uint64_t pikaseko64_unkeyed(const void* data, size_t len);
+uint64_t pikaseko64_keyed(const void* data, size_t len, const void* key, size_t key_len);
 
-// Streaming: same result as pikaseko256 for the concatenation of the pieces.
-// final does not change the context.
-void pikaseko256_init(pikaseko256_ctx* ctx, const uint64_t key[8]);
+// Streaming: the same results for the concatenation of the pieces.
+void pikaseko256_init_unkeyed(pikaseko256_ctx* ctx);
+void pikaseko256_init_keyed(pikaseko256_ctx* ctx, const void* key, size_t key_len);
+void pikaseko64_init_unkeyed(pikaseko256_ctx* ctx);
+void pikaseko64_init_keyed(pikaseko256_ctx* ctx, const void* key, size_t key_len);
 void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len);
-void pikaseko256_final(const pikaseko256_ctx* ctx, uint64_t out[4]);
+void pikaseko256_final(const pikaseko256_ctx* ctx, uint8_t digest[32]);  // after a pikaseko256_init_*
+uint64_t pikaseko64_final(const pikaseko256_ctx* ctx);                  // after a pikaseko64_init_*
 
-// 1 when the functions above run the AVX-512 code (checked once).
-int pikaseko256_uses_avx512(void);
+// The implementation in use: "AVX-512 + VAES", "AVX2 + VAES", "AES-NI", "ARMv8 AES" or "portable".
+const char* pikaseko256_implementation(void);
 ```
-
-These functions use the AVX-512 implementation when the CPU and OS support
-AVX-512F, AVX-512BW and VAES and the portable one otherwise, with the same
-results. Each implementation is also available by name, with the suffix
-`_avx512` (the caller checks the CPU; absent from portable-only builds) or
-`_portable` (any CPU, any byte order, constant time). The streaming context
-is the same for both, so a hash can be continued with either. Setting
-`PIKASEKO256_FORCE_PORTABLE=1` before the first call selects the portable
-code.
-
-`include/pikaseko256_analysis.h` declares the step function alone, for
-analysis: `pikaseko256_steps(state, t0, nsteps)` runs nsteps steps from step
-index t0 on a 128-word state (word 8i + l is lane l of register i), and
-`pikaseko256_steps_avx512` and `pikaseko256_steps_portable` are the two
-implementations.
 
 Example:
 
 ```c
 #include "pikaseko256.h"
 
-uint64_t key[8];      // 512-bit secret key, filled by the caller
-uint64_t digest[4];
-pikaseko256(msg, msg_len, key, digest);  // AVX-512 + VAES if available, else portable
+uint8_t digest[32];
+pikaseko256_unkeyed(msg, msg_len, digest);                  // public hash
+pikaseko256_keyed(msg, msg_len, key, 32, digest);            // MAC / PRF with a 32-byte secret key
+uint64_t h = pikaseko64_keyed(msg, msg_len, key, 32);        // 64-bit keyed hash, e.g. for a hash table
 ```
 
-Byte order: key word i is bytes 8i .. 8i + 7 of a 64-byte key,
-little-endian. The canonical 32-byte digest is out[0], out[1], out[2], out[3],
-each written little-endian. `pikaseko256_key_from_bytes(key, bytes64)` and
-`pikaseko256_digest_to_bytes(bytes32, out)` (inline, in the header) convert
-on any host.
+The functions use the fastest implementation the CPU and OS support:
+AVX-512 + VAES, AVX2 + VAES or AES-NI on x86-64, the ARMv8 AES instructions on
+AArch64, else portable C (constant time, no tables). The results are the same
+everywhere. Setting `PIKASEKO256_FORCE_PORTABLE=1` before the first call
+selects the portable code.
 
 Notes for use:
 
-* The zero key and the NULL key give the unkeyed hash. There is no domain
-  separation between keyed and unkeyed use, or between the 64-bit and the
-  256-bit output. Never use an all-zero key as a secret.
-* For a message in pieces, use `pikaseko256_init`, `pikaseko256_update` and
-  `pikaseko256_final` (and their `_portable` versions); the result equals the
-  one-shot function.
+* Unkeyed and keyed hashing are separate: no key, not even an empty or
+  all-zero one, gives the unkeyed hash, and each key length gives its own
+  function. The 64-bit hash is not a part of the 256-bit one. For a MAC or a
+  PRF use a uniformly random secret key of 16 to 64 bytes; longer keys are
+  hashed to 32 bytes first.
+* The digest bytes and the 64-bit value are the same on every byte order.
+* A key costs about 12 ns per call on top of the hash (setup and wiping of the
+  key words); for many short messages under one key, initialize a context once
+  and copy it for each message.
 * The message length is not hidden: running time depends on it.
+
+`include/pikaseko256_analysis.h` declares the step function alone, for
+analysis: `pikaseko256_steps(state, t0, nsteps)` runs nsteps steps from step
+index t0 on a 128-word state (word 8i + l is lane l of register i).
 
 ## Speed
 
 AMD Ryzen 9 9950X3D (Zen 5), one core at about 5.5 GHz, data in cache,
-AVX-512 implementation built with gcc 15 (`make bench`). A key adds about 2 ns.
+AVX-512 implementation built with gcc 15, the public functions with a 32-byte
+key (`make bench`, medians):
 
 | input | unkeyed | keyed |
 |---|---:|---:|
-| 0 to 128 bytes | 36 ns | 38 ns |
-| 256 bytes | 45 ns | 47 ns |
-| 1 KiB | 76 ns | 78 ns |
-| 1 MiB | 24.3 GB/s | 24.6 GB/s |
+| 0 to 128 bytes | 37 to 39 ns | 49 ns |
+| 256 bytes | 49 ns | 61 ns |
+| 1 KiB | 79 ns | 92 ns |
+| 1 MiB | 23.7 GB/s | 23.5 GB/s |
+
+The key costs about 12 ns per call: about 1 ns in the hash itself, the rest
+for turning the key bytes into key words and wiping them.
 
 In bulk the loop takes about 14.5 core cycles per 64 bytes; it is bound by the
 two AES pipes (96 AES rounds per 256 bytes at two per cycle is 48 of its about
@@ -185,10 +184,10 @@ CPU that has it). Measured on the same Zen 5 core, unkeyed:
 
 | implementation | 0 to 128 bytes | 1 KiB | bulk |
 |---|---:|---:|---:|
-| AVX2 + VAES (two 256-bit vectors per register) | 85 ns | 0.32 µs | 9.3 GB/s |
-| AES-NI (four 128-bit vectors per register) | 250 ns | 0.88 µs | 2.0 GB/s |
+| AVX2 + VAES (two 256-bit vectors per register) | 93 ns | 0.27 µs | 8.9 GB/s |
+| AES-NI (four 128-bit vectors per register) | 220 ns | 0.89 µs | 2.0 GB/s |
 
-A key adds about 17 ns (AVX2) and 45 ns (AES-NI). These versions and the
+A key adds about 13 ns (AVX2) and 35 ns (AES-NI) in the hash itself. These versions and the
 portable one start the unkeyed hash from a precomputed state after the first
 step (`src/pikaseko256_step0.h`, generated by `tools/gen_step0.py`); for the
 AVX-512 code that was not faster.
@@ -204,24 +203,27 @@ welcome (CONTRIBUTING.md).
 
 The portable implementation uses a bitsliced AES (constant time, no tables,
 no intrinsics). On the same machine (gcc -O2, `make bench-portable`) it takes
-about 5.4 µs per short message (6.2 µs keyed), 14 µs for 1 KiB and runs at
-about 118 MB/s in bulk, roughly 200 times slower than the AVX-512 code. With clang 21 it is about 10% faster
-(5.8 µs per short message, 129 MB/s).
+about 5.5 µs per short message, 14 µs for 1 KiB and runs at about 118 MB/s in
+bulk, roughly 200 times slower than the AVX-512 code. With clang 21 it is
+about 10% faster.
 
 ## Test vectors
 
-`test/test_vectors.txt`. Byte i of the message is i mod 256; each line gives
-out[0..3] in hex. The unkeyed hash of the empty message is
+`test/test_vectors.txt`, written by `python3 ref/pikaseko256.py --print-vectors`
+and by `build/vectors`. Byte i of the message is i mod 256 and byte i of the
+key is i; digests are bytes in hex. The unkeyed 256-bit digest of the empty
+message is
 
-    4ce9ce973810692d 933bdf92669b1d6e 277e33f96dacc156 9b8ea902b68c1524
+    b1ef4649151f3910e1cbbe7744ce15400fb62790873ac59bd5e9b875282750c7
 
-More vectors, including keyed ones, are in section 11 of [SPEC.md](SPEC.md).
+More are in section 11 of [SPEC.md](SPEC.md).
 
 ## Construction
 
 The state is sixteen 512-bit registers, each four 128-bit AES blocks. The
 initial value is computed from 32-bit words of pi, e and the golden ratio,
-and the key is xored into it. A step splits the registers into four groups
+and the key and a domain word (version, keyed or not, key length, digest
+length) are xored into it. A step splits the registers into four groups
 of four (with a stride that cycles 1, 2, 4, 8). Each register gets two AES
 rounds whose round keys are xors of other registers of its group; the
 second key is rotated by one or two blocks, which carries data between
@@ -229,10 +231,10 @@ blocks. One group also takes a constant derived from pi. A one-bit
 difference reaches every register after three steps and practically every
 byte of the state after four. The message is cut
 into 64-byte packets with Merkle-Damgard strengthening. Four packets are
-added into four registers every three steps. One step later, each packet
+added into four registers every three steps. Two steps later, each packet
 register is multiplied (32 x 32 -> 64 bits per lane) with a neighbouring
 register, and the products are xored into four other registers after the
-third step. After the last packets come six more steps. The output is the
+next step. After the last packets come six more steps. The output is the
 sum of all registers, passed through two AES rounds keyed by sums of other
 registers and folded to 256 bits.
 

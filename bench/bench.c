@@ -4,7 +4,8 @@
 // implementation the build and the CPU have.
 //
 //   bench [--keyed] [--impl NAME] [--reps N] [--max BYTES]
-//     NAME: auto (default: what pikaseko256() uses), avx512, avx2, aesni, neon, portable
+//     NAME: auto (default: the public functions, key setup included), avx512, avx2, aesni,
+//           neon, portable (one implementation, the key set up once)
 //
 // Each call depends on the previous result (its first message byte is taken from the last
 // digest), so short inputs measure latency, as a hash table lookup sees it. The iteration
@@ -23,6 +24,7 @@
 #include <time.h>
 
 #include "pikaseko256.h"
+#include "pikaseko256_consts.h"
 #include "pikaseko256_impl.h"
 
 #if defined(PIKASEKO256_HAVE_X86)
@@ -44,19 +46,33 @@ static double Now(void) {
   return (double)ts.tv_sec + 1e-9 * (double)ts.tv_nsec;
 }
 
-typedef void HashFn(const void*, size_t, const uint64_t*, uint64_t*);
-typedef struct { const char* name; int level; HashFn* hash; } Impl;
+typedef void HashFn(const void*, size_t, const uint64_t*, uint64_t, uint64_t*);
+typedef struct { const char* name; int level; HashFn* hash; } Impl;  // hash NULL: the public functions
 static const Impl kImpls[] = {
-    {"auto", 0, pikaseko256},
-    {"portable", 0, pikaseko256_portable},
+    {"auto", 0, NULL},
+    {"portable", 0, pikaseko_hash_portable},
 #if defined(PIKASEKO256_HAVE_X86)
-    {"avx512", 3, pikaseko256_avx512},
-    {"avx2", 2, pikaseko256_avx2},
-    {"aesni", 1, pikaseko256_aesni},
+    {"avx512", 3, pikaseko_hash_avx512},
+    {"avx2", 2, pikaseko_hash_avx2},
+    {"aesni", 1, pikaseko_hash_aesni},
 #elif defined(PIKASEKO256_HAVE_NEON)
-    {"neon", 1, pikaseko256_neon},
+    {"neon", 1, pikaseko_hash_neon},
 #endif
 };
+
+// One hash: the public function (key setup included) or one implementation's core.
+static uint64_t HashOnce(const Impl* im, const uint8_t* buf, size_t n, int keyed, const uint8_t key[32],
+                         const uint64_t K[8], uint64_t dom) {
+  if (!im->hash) {
+    uint8_t d[32];
+    if (keyed) pikaseko256_keyed(buf, n, key, 32, d);
+    else pikaseko256_unkeyed(buf, n, d);
+    return d[0];
+  }
+  uint64_t w[4];
+  im->hash(buf, n, keyed ? K : NULL, dom, w);
+  return w[0];
+}
 
 static int CmpDouble(const void* a, const void* b) {
   const double x = *(const double*)a, y = *(const double*)b;
@@ -101,13 +117,16 @@ int main(int argc, char** argv) {
   if (!raw) return 1;
   uint8_t* buf = raw + (64 - (uintptr_t)raw % 64);  // 64-byte aligned
   for (size_t i = 0; i < maxn; i++) buf[i] = (uint8_t)(i * 131 + 7);
-  const uint64_t key[8] = {1, 2, 3, 4, 5, 6, 7, 8};
-  uint64_t sink = 0, out[4];
+  uint8_t key[32];
+  for (int i = 0; i < 32; i++) key[i] = (uint8_t)i;
+  uint64_t K[8];
+  const uint64_t dom = keyed ? pikaseko_key_setup(key, 32, 32, K) : PIKASEKO_DOMAIN_UNKEYED256;
+  uint64_t sink = 0;
   double* t = (double*)malloc(sizeof(double) * (size_t)reps);
   if (!t) return 1;
 
   printf("PikasekoHash-256, %s implementation, %s\n", im == &kImpls[0] ? pikaseko256_implementation() : im->name,
-         keyed ? "keyed" : "unkeyed");
+         keyed ? "keyed (32-byte key)" : "unkeyed");
   PrintGovernor();
   printf("%10s %12s %12s %10s %10s", "bytes", "ns median", "ns min", "spread", "MB/s");
 #ifdef HAVE_TSC
@@ -121,8 +140,7 @@ int main(int argc, char** argv) {
       const double t0 = Now();
       for (long it = 0; it < iters; it++) {
         buf[0] = (uint8_t)sink;
-        im->hash(buf, n, keyed ? key : NULL, out);
-        sink += out[0];
+        sink += HashOnce(im, buf, n, keyed, key, K, dom);
       }
       if (Now() - t0 >= 0.02 || iters > (1L << 40)) break;
       iters *= 2;
@@ -137,8 +155,7 @@ int main(int argc, char** argv) {
       const double t0 = Now();
       for (long it = 0; it < iters; it++) {
         buf[0] = (uint8_t)sink;  // a dependency between calls: latency for short inputs
-        im->hash(buf, n, keyed ? key : NULL, out);
-        sink += out[0];
+        sink += HashOnce(im, buf, n, keyed, key, K, dom);
       }
       t[rep] = (Now() - t0) * 1e9 / (double)iters;
 #ifdef HAVE_TSC

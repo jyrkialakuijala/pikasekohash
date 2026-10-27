@@ -90,7 +90,7 @@ build/verify_step_collisions: tools/verify_step_collisions.c $(HDRS) $(LIB)
 	$(CC) $(CFLAGS) $(DEFS) $(INC) $< $(LIB) $(LDFLAGS) -o $@
 
 test: build/test build/vectors build/verify_step_collisions
-	$(RUN) ./build/test
+	$(RUN) ./build/test test/test_vectors.txt
 	$(RUN) ./build/vectors | diff - test/test_vectors.txt && echo "test_vectors.txt reproduced"
 	$(RUN) ./build/verify_step_collisions analysis/data/step_collision_t*.txt
 

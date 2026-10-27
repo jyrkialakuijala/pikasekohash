@@ -11,7 +11,7 @@
 #include <string.h>
 
 #include "pikaseko256.h"
-#include "pikaseko256_analysis.h"
+#include "pikaseko256_impl.h"
 #include "pikaseko256_compiler.h"
 #include "pikaseko256_consts.h"
 
@@ -53,9 +53,10 @@ INL void StepAny(V r[16], unsigned t, const Consts* cs) {
 
 // The state is kept one step ahead: an absorption at step index t starts from the state
 // after step t (which the previous absorption, or the initialization, already ran) and ends
-// with step t + 3, the first step of the next absorption or the first final step. This is
-// the order of SPEC.md regrouped; the streaming context holds this state for every
-// implementation.
+// with step t + 3, the first step of the next absorption or the first final step. The
+// products are formed after step t + 2 and xored in after step t + 3 (SPEC.md, section 7),
+// so an absorption in this form is self-contained. This is the order of SPEC.md regrouped;
+// the streaming context holds this state for every implementation.
 
 // Absorption of np packets (np compile-time 1..4) at phase p = t mod 4.
 INL void Absorb(V r[16], const int p, const V* P, const int np, const Consts* cs) {
@@ -64,17 +65,17 @@ INL void Absorb(V r[16], const int p, const V* P, const int np, const Consts* cs
   if (np > 2) r[10] = Add(r[10], P[2]);
   if (np > 3) r[15] = Add(r[15], P[3]);
   Step(r, (p + 1) & 3, cs);
+  Step(r, (p + 2) & 3, cs);
   V q0 = r[0], q1 = r[0], q2 = r[0], q3 = r[0];
   if (np > 0) q0 = _mm512_mul_epu32(r[1], r[0]);
   if (np > 1) q1 = _mm512_mul_epu32(r[4], r[5]);
   if (np > 2) q2 = _mm512_mul_epu32(r[11], r[10]);
   if (np > 3) q3 = _mm512_mul_epu32(r[14], r[15]);
-  Step(r, (p + 2) & 3, cs);
+  Step(r, (p + 3) & 3, cs);
   if (np > 0) r[3] = Xor(r[3], q0);
   if (np > 1) r[6] = Xor(r[6], q1);
   if (np > 2) r[9] = Xor(r[9], q2);
   if (np > 3) r[12] = Xor(r[12], q3);
-  Step(r, (p + 3) & 3, cs);
 }
 
 // Absorption of the last group: np (1..4) packets known only at run time. Missing
@@ -82,11 +83,11 @@ INL void Absorb(V r[16], const int p, const V* P, const int np, const Consts* cs
 INL void AbsorbMasked(V r[16], const int p, const V* P, const V* m, const Consts* cs) {
   r[0] = Add(r[0], P[0]); r[5] = Add(r[5], P[1]); r[10] = Add(r[10], P[2]); r[15] = Add(r[15], P[3]);
   Step(r, (p + 1) & 3, cs);
+  Step(r, (p + 2) & 3, cs);
   const V q0 = _mm512_mul_epu32(r[1], r[0]), q1 = _mm512_and_si512(_mm512_mul_epu32(r[4], r[5]), m[1]);
   const V q2 = _mm512_and_si512(_mm512_mul_epu32(r[11], r[10]), m[2]), q3 = _mm512_and_si512(_mm512_mul_epu32(r[14], r[15]), m[3]);
-  Step(r, (p + 2) & 3, cs);
-  r[3] = Xor(r[3], q0); r[6] = Xor(r[6], q1); r[9] = Xor(r[9], q2); r[12] = Xor(r[12], q3);
   Step(r, (p + 3) & 3, cs);
+  r[3] = Xor(r[3], q0); r[6] = Xor(r[6], q1); r[9] = Xor(r[9], q2); r[12] = Xor(r[12], q3);
 }
 
 // Final steps 2..6 (the first ran at the end of the last absorption), from phase p.
@@ -113,7 +114,7 @@ INL void Tail(V r[16], const int p, const V* P, int np, const Consts* cs) {
 
 INL V Load(const uint8_t* p) { return _mm512_loadu_si512((const void*)p); }
 
-INL void Init(V r[16], const uint64_t key[8]) {
+INL void Init(V r[16], const uint64_t key[8], uint64_t dom) {
   const V lane = _mm512_set_epi64(7, 6, 5, 4, 3, 2, 1, 0);
   // phi + l e (mod 2^32) in the low half of lane l
   const V bl = _mm512_and_si512(_mm512_add_epi64(_mm512_set1_epi64(PIKASEKO_PHI),
@@ -129,6 +130,7 @@ PIKASEKO_UNROLL(16)
       r[i] = Xor(r[i], _mm512_rolv_epi64(Ki, _mm512_set1_epi64((4 * i) & 63)));
     }
   }
+  r[2] = Xor(r[2], _mm512_maskz_set1_epi64(1, (long long)dom));  // the domain word, lane 0 of r_2
 }
 
 INL V Fold(V r[16]) {
@@ -142,8 +144,8 @@ INL V Fold(V r[16]) {
 // The state after step 0. (The unkeyed state after step 0 is a constant, but loading it
 // instead, as the other implementations do, made gcc spill the state registers here and
 // was slower; out-of-order execution already overlaps step 0 with the caller.)
-INL void Start(V r[16], const uint64_t key[8], const Consts* cs) {
-  Init(r, key);
+INL void Start(V r[16], const uint64_t key[8], uint64_t dom, const Consts* cs) {
+  Init(r, key, dom);
   Step(r, 0, cs);
 }
 
@@ -228,19 +230,19 @@ PIKASEKO_UNROLL(8)
   _mm256_storeu_si256((__m256i*)out, _mm512_castsi512_si256(Fold(r)));
 }
 
-void pikaseko256_avx512(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
+void pikaseko_hash_avx512(const void* data, size_t len, const uint64_t key[8], uint64_t dom, uint64_t out[4]) {
   const uint8_t* p = (const uint8_t*)data;
   Consts cs; LoadConsts(&cs);
   V r[16];
-  Start(r, key, &cs);
+  Start(r, key, dom, &cs);
   const unsigned t = AbsorbGroups(r, 0, p, len / 256, &cs);
   Finish(r, t, p + (len & ~(size_t)255), len % 256, len, &cs, out);
 }
 
 // Streaming. The context holds the state in normal form (word 8i + l = lane l of r_i) after
 // step t, the step index t at which the next absorption starts, and the bytes of the
-// current, incomplete group of four packets. A
-// complete group is absorbed at once, as in the one-shot function.
+// current, incomplete group of four packets. A complete group is absorbed at once, as in
+// the one-shot function.
 INL void LoadState(V r[16], const pikaseko256_ctx* ctx) {
   for (int i = 0; i < 16; i++) r[i] = _mm512_loadu_si512((const void*)(ctx->r + 8 * i));
 }
@@ -248,15 +250,15 @@ INL void StoreState(pikaseko256_ctx* ctx, const V r[16]) {
   for (int i = 0; i < 16; i++) _mm512_storeu_si512((void*)(ctx->r + 8 * i), r[i]);
 }
 
-void pikaseko256_init_avx512(pikaseko256_ctx* ctx, const uint64_t key[8]) {
+void pikaseko_init_avx512(pikaseko256_ctx* ctx, const uint64_t key[8], uint64_t dom) {
   Consts cs; LoadConsts(&cs);
   V r[16];
-  Start(r, key, &cs);
+  Start(r, key, dom, &cs);
   StoreState(ctx, r);
   ctx->len = 0; ctx->t = 0; ctx->nbuf = 0;
 }
 
-void pikaseko256_update_avx512(pikaseko256_ctx* ctx, const void* data, size_t len) {
+void pikaseko_update_avx512(pikaseko256_ctx* ctx, const void* data, size_t len) {
   const uint8_t* p = (const uint8_t*)data;
   ctx->len += len;
   if (len < 256 - (size_t)ctx->nbuf) {
@@ -282,24 +284,14 @@ void pikaseko256_update_avx512(pikaseko256_ctx* ctx, const void* data, size_t le
   StoreState(ctx, r);
 }
 
-void pikaseko256_final_avx512(const pikaseko256_ctx* ctx, uint64_t out[4]) {
+void pikaseko_final_avx512(const pikaseko256_ctx* ctx, uint64_t out[4]) {
   Consts cs; LoadConsts(&cs);
   V r[16];
   LoadState(r, ctx);
   Finish(r, ctx->t, ctx->buf, ctx->nbuf, ctx->len, &cs, out);
 }
 
-void pikaseko256_unkeyed_avx512(const void* data, size_t len, uint64_t out[4]) {
-  pikaseko256_avx512(data, len, NULL, out);
-}
-
-uint64_t pikaseko64_avx512(const void* data, size_t len, const uint64_t key[8]) {
-  uint64_t out[4];
-  pikaseko256_avx512(data, len, key, out);
-  return out[0];
-}
-
-void pikaseko256_steps_avx512(uint64_t state[128], unsigned t0, unsigned nsteps) {
+void pikaseko_steps_avx512(uint64_t state[128], unsigned t0, unsigned nsteps) {
   Consts cs; LoadConsts(&cs);
   V r[16];
   for (int i = 0; i < 16; i++) r[i] = _mm512_loadu_si512((const void*)(state + 8 * i));

@@ -20,7 +20,7 @@
 #include <string.h>
 
 #include "pikaseko256.h"
-#include "pikaseko256_analysis.h"
+#include "pikaseko256_impl.h"
 #include "pikaseko256_consts.h"
 #include "pikaseko256_step0.h"
 
@@ -246,8 +246,9 @@ static const int kFeed[4] = {0, 5, 10, 15}, kMult[4] = {1, 4, 11, 14}, kTarget[4
 
 // The state is kept one step ahead: an absorption at step index t starts from the state
 // after step t (run by the previous absorption or the initialization) and ends with step
-// t + 3, the first step of the next absorption or the first final step. This is the order
-// of SPEC.md regrouped; it lets the unkeyed hash start from the precomputed state after
+// t + 3, the first step of the next absorption or the first final step. The products are
+// formed after step t + 2 and xored in after step t + 3 (SPEC.md, section 7). This is the
+// order of SPEC.md regrouped; it lets the unkeyed hash start from the precomputed state after
 // step 0, and it is the state the streaming context holds.
 //
 // Absorb np (1..4) packets at step t; returns t + 3. The additions and products need the
@@ -256,15 +257,15 @@ static unsigned Absorb(Slice r[16], unsigned t, const Reg* P, int np, const Slic
   t++;
   for (int k = 0; k < np; k++) r[kFeed[k]] = ToSlice(Add(FromSlice(r[kFeed[k]]), P[k]));
   Step(r, t++, cs);
+  Step(r, t++, cs);
   Slice q[4];
   for (int k = 0; k < np; k++) q[k] = ToSlice(Mul32(FromSlice(r[kMult[k]]), FromSlice(r[kFeed[k]])));
-  Step(r, t++, cs);
-  for (int k = 0; k < np; k++) r[kTarget[k]] = XorS(r[kTarget[k]], q[k]);
   Step(r, t, cs);
+  for (int k = 0; k < np; k++) r[kTarget[k]] = XorS(r[kTarget[k]], q[k]);
   return t;
 }
 
-static void Init(Slice r[16], const uint64_t key[8]) {
+static void Init(Slice r[16], const uint64_t key[8], uint64_t dom) {
   for (int i = 0; i < 16; i++) {
     Reg x;
     for (int l = 0; l < 8; l++) {
@@ -277,6 +278,7 @@ static void Init(Slice r[16], const uint64_t key[8]) {
       }
       x.l[l] = v;
     }
+    if (i == 2) x.l[0] ^= dom;  // the domain word
     r[i] = ToSlice(x);
   }
 }
@@ -326,25 +328,25 @@ static void Finish(Slice r[16], unsigned t, const uint8_t* m, size_t n, uint64_t
 }
 
 // The state after step 0: computed for a key, the precomputed one for the unkeyed hash.
-static void Start(Slice r[16], const uint64_t key[8], const Slice cs[4]) {
+static void Start(Slice r[16], const uint64_t key[8], uint64_t dom, const Slice cs[4]) {
   if (key) {  // depends on the pointer only, never on the key value
-    Init(r, key);
+    Init(r, key, dom);
     Step(r, 0, cs);
   } else {
     for (int i = 0; i < 16; i++) {
       Reg x;
-      memcpy(x.l, kPikasekoUnkeyedStep0 + 8 * i, 64);
+      memcpy(x.l, kPikasekoUnkeyedStep0[dom == PIKASEKO_DOMAIN_UNKEYED64] + 8 * i, 64);
       r[i] = ToSlice(x);
     }
   }
 }
 
-void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
+void pikaseko_hash_portable(const void* data, size_t len, const uint64_t key[8], uint64_t dom, uint64_t out[4]) {
   const uint8_t* m = (const uint8_t*)data;
   Slice cs[4];
   SliceConsts(cs);
   Slice r[16];
-  Start(r, key, cs);
+  Start(r, key, dom, cs);
   const unsigned t = AbsorbGroups(r, 0, m, len / 256, cs);
   Finish(r, t, m + (len - len % 256), len % 256, len, cs, out);
 }
@@ -364,16 +366,16 @@ static void StoreState(pikaseko256_ctx* ctx, const Slice r[16]) {
   }
 }
 
-void pikaseko256_init_portable(pikaseko256_ctx* ctx, const uint64_t key[8]) {
+void pikaseko_init_portable(pikaseko256_ctx* ctx, const uint64_t key[8], uint64_t dom) {
   Slice cs[4];
   SliceConsts(cs);
   Slice r[16];
-  Start(r, key, cs);
+  Start(r, key, dom, cs);
   StoreState(ctx, r);
   ctx->len = 0; ctx->t = 0; ctx->nbuf = 0;
 }
 
-void pikaseko256_update_portable(pikaseko256_ctx* ctx, const void* data, size_t len) {
+void pikaseko_update_portable(pikaseko256_ctx* ctx, const void* data, size_t len) {
   const uint8_t* p = (const uint8_t*)data;
   ctx->len += len;
   if (len < 256 - (size_t)ctx->nbuf) {
@@ -400,7 +402,7 @@ void pikaseko256_update_portable(pikaseko256_ctx* ctx, const void* data, size_t 
   StoreState(ctx, r);
 }
 
-void pikaseko256_final_portable(const pikaseko256_ctx* ctx, uint64_t out[4]) {
+void pikaseko_final_portable(const pikaseko256_ctx* ctx, uint64_t out[4]) {
   Slice cs[4];
   SliceConsts(cs);
   Slice r[16];
@@ -408,17 +410,7 @@ void pikaseko256_final_portable(const pikaseko256_ctx* ctx, uint64_t out[4]) {
   Finish(r, ctx->t, ctx->buf, ctx->nbuf, ctx->len, cs, out);
 }
 
-void pikaseko256_unkeyed_portable(const void* data, size_t len, uint64_t out[4]) {
-  pikaseko256_portable(data, len, NULL, out);
-}
-
-uint64_t pikaseko64_portable(const void* data, size_t len, const uint64_t key[8]) {
-  uint64_t out[4];
-  pikaseko256_portable(data, len, key, out);
-  return out[0];
-}
-
-void pikaseko256_steps_portable(uint64_t state[128], unsigned t0, unsigned nsteps) {
+void pikaseko_steps_portable(uint64_t state[128], unsigned t0, unsigned nsteps) {
   Slice cs[4];
   SliceConsts(cs);
   Slice r[16];

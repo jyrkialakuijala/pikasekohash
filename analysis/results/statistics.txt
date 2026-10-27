@@ -1,3 +1,4 @@
+(Measured on version 0, release 0.0.2. Version 1 changes the initial value and the product timing; these tests were not repeated for it, see ANALYSIS.md, section 15.)
 Structured-input pictures, 2^34 inputs into 2^20 buckets (20 output bits), final design:
 mode A: std ratio 1.0007  min -4.8 sd  max +4.7 sd  (mean 16384.0, min 15764, max 16988)
 mode B: std ratio 1.0001  min -5.0 sd  max +4.6 sd  (mean 16384.0, min 15747, max 16970)

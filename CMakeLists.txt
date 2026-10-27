@@ -6,7 +6,7 @@
 # With PIKASEKO256_SIMD=OFF the library contains only the portable code and
 # PIKASEKO256_PORTABLE_ONLY is defined for everything that links it.
 cmake_minimum_required(VERSION 3.16)
-project(pikaseko256 VERSION 0.0.2 LANGUAGES C)
+project(pikaseko256 VERSION 0.1.0 LANGUAGES C)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -86,7 +86,7 @@ if(PIKASEKO256_BUILD_TESTS)
   endif()
   pikaseko256_program(bench bench/bench.c)
 
-  add_test(NAME test COMMAND pikaseko256_test)
+  add_test(NAME test COMMAND pikaseko256_test ${CMAKE_CURRENT_SOURCE_DIR}/test/test_vectors.txt)
   add_test(NAME vectors COMMAND ${CMAKE_COMMAND}
     "-DEMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
     -DPROGRAM=$<TARGET_FILE:pikaseko256_vectors>

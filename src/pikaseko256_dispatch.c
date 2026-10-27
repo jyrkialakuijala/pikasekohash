@@ -4,10 +4,12 @@
 // CPU and OS support: on x86-64 AVX-512 + VAES, AVX2 + VAES or AES-NI, on AArch64 the ARMv8
 // AES instructions, else the portable one. The check runs once and its result is cached.
 #include <stdlib.h>
+#include <string.h>
 
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
 #include "pikaseko256_impl.h"
+#include "pikaseko256_consts.h"
 
 #if defined(PIKASEKO256_HAVE_X86) || defined(PIKASEKO256_HAVE_NEON)
 static int ForcePortable(void) {
@@ -108,26 +110,116 @@ int pikaseko256_uses_avx512(void) {
 #endif
 }
 
-void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
-  PICK(pikaseko256)(data, len, key, out);
+// ---- The public functions: keys, domain words and digests (SPEC.md, sections 4 and 9) ----
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ || defined(_M_X64) || defined(_M_ARM64)
+#define LITTLE_ENDIAN_HOST 1
+#endif
+
+// Clears secret material so that the compiler cannot drop the stores as dead.
+static void Wipe(void* p, size_t n) {
+#if defined(__GNUC__) || defined(__clang__)
+  memset(p, 0, n);
+  __asm__ volatile("" : : "r"(p) : "memory");
+#else
+  volatile uint8_t* q = (volatile uint8_t*)p;
+  while (n--) *q++ = 0;
+#endif
 }
-void pikaseko256_unkeyed(const void* data, size_t len, uint64_t out[4]) {
-  PICK(pikaseko256)(data, len, NULL, out);
+
+// A key of any length to the eight key words and the domain word. Keys longer than 64
+// bytes are replaced by their unkeyed 256-bit digest (flag bit 1 of the domain word).
+uint64_t pikaseko_key_setup(const void* key, size_t key_len, unsigned out_len, uint64_t K[8]) {
+  uint8_t kb[64] = {0};
+  int hashed = 0;
+  if (key_len > 64) {
+    pikaseko256_unkeyed(key, key_len, kb);
+    key_len = 32;
+    hashed = 1;
+  } else if (key_len) {
+    memcpy(kb, key, key_len);
+  }
+#ifdef LITTLE_ENDIAN_HOST
+  memcpy(K, kb, 64);
+#else
+  for (int i = 0; i < 8; i++) {
+    uint64_t v = 0;
+    for (int j = 7; j >= 0; j--) v = (v << 8) | kb[8 * i + j];
+    K[i] = v;
+  }
+#endif
+  Wipe(kb, sizeof kb);
+  return PIKASEKO_DOMAIN(1, hashed, key_len, out_len);
 }
-uint64_t pikaseko64(const void* data, size_t len, const uint64_t key[8]) {
-  uint64_t out[4];
-  pikaseko256(data, len, key, out);
-  return out[0];
+
+static void DigestBytes(const uint64_t w[4], uint8_t* digest, unsigned n) {
+#ifdef LITTLE_ENDIAN_HOST
+  memcpy(digest, w, n);
+#else
+  for (unsigned i = 0; i < n; i++) digest[i] = (uint8_t)(w[i / 8] >> (8 * (i % 8)));
+#endif
 }
-void pikaseko256_init(pikaseko256_ctx* ctx, const uint64_t key[8]) {
-  PICK(pikaseko256_init)(ctx, key);
+
+void pikaseko256_unkeyed(const void* data, size_t len, uint8_t digest[32]) {
+  uint64_t w[4];
+  PICK(pikaseko_hash)(data, len, NULL, PIKASEKO_DOMAIN_UNKEYED256, w);
+  DigestBytes(w, digest, 32);
+}
+void pikaseko256_keyed(const void* data, size_t len, const void* key, size_t key_len, uint8_t digest[32]) {
+  uint64_t K[8], w[4];
+  const uint64_t dom = pikaseko_key_setup(key, key_len, 32, K);
+  PICK(pikaseko_hash)(data, len, K, dom, w);
+  Wipe(K, sizeof K);
+  DigestBytes(w, digest, 32);
+}
+uint64_t pikaseko64_unkeyed(const void* data, size_t len) {
+  uint64_t w[4];
+  PICK(pikaseko_hash)(data, len, NULL, PIKASEKO_DOMAIN_UNKEYED64, w);
+  return w[0];
+}
+uint64_t pikaseko64_keyed(const void* data, size_t len, const void* key, size_t key_len) {
+  uint64_t K[8], w[4];
+  const uint64_t dom = pikaseko_key_setup(key, key_len, 8, K);
+  PICK(pikaseko_hash)(data, len, K, dom, w);
+  Wipe(K, sizeof K);
+  return w[0];
+}
+
+void pikaseko256_init_unkeyed(pikaseko256_ctx* ctx) {
+  PICK(pikaseko_init)(ctx, NULL, PIKASEKO_DOMAIN_UNKEYED256);
+  ctx->out_len = 32;
+}
+void pikaseko256_init_keyed(pikaseko256_ctx* ctx, const void* key, size_t key_len) {
+  uint64_t K[8];
+  const uint64_t dom = pikaseko_key_setup(key, key_len, 32, K);
+  PICK(pikaseko_init)(ctx, K, dom);
+  Wipe(K, sizeof K);
+  ctx->out_len = 32;
+}
+void pikaseko64_init_unkeyed(pikaseko256_ctx* ctx) {
+  PICK(pikaseko_init)(ctx, NULL, PIKASEKO_DOMAIN_UNKEYED64);
+  ctx->out_len = 8;
+}
+void pikaseko64_init_keyed(pikaseko256_ctx* ctx, const void* key, size_t key_len) {
+  uint64_t K[8];
+  const uint64_t dom = pikaseko_key_setup(key, key_len, 8, K);
+  PICK(pikaseko_init)(ctx, K, dom);
+  Wipe(K, sizeof K);
+  ctx->out_len = 8;
 }
 void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len) {
-  PICK(pikaseko256_update)(ctx, data, len);
+  PICK(pikaseko_update)(ctx, data, len);
 }
-void pikaseko256_final(const pikaseko256_ctx* ctx, uint64_t out[4]) {
-  PICK(pikaseko256_final)(ctx, out);
+void pikaseko256_final(const pikaseko256_ctx* ctx, uint8_t digest[32]) {
+  uint64_t w[4];
+  PICK(pikaseko_final)(ctx, w);
+  DigestBytes(w, digest, 32);
+}
+uint64_t pikaseko64_final(const pikaseko256_ctx* ctx) {
+  uint64_t w[4];
+  PICK(pikaseko_final)(ctx, w);
+  return w[0];
 }
 void pikaseko256_steps(uint64_t state[128], unsigned t0, unsigned nsteps) {
-  PICK(pikaseko256_steps)(state, t0, nsteps);
+  PICK(pikaseko_steps)(state, t0, nsteps);
 }

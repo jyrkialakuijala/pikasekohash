@@ -25,4 +25,14 @@ static const uint64_t kPikasekoStepConst[4][8] = {
 
 #define PIKASEKO_FINAL_STEPS 6
 
+// The domain word (SPEC.md, section 4), xored into lane 0 of r_2 of the initial value:
+// byte 0 the function version, byte 1 flags (bit 0 keyed, bit 1 key longer than 64 bytes and
+// hashed), byte 2 the key length in bytes as used (0..64), byte 3 the digest length in bytes.
+#define PIKASEKO_VERSION 1
+#define PIKASEKO_DOMAIN(keyed, hashed, key_len, out_len) \
+  ((uint64_t)PIKASEKO_VERSION | ((uint64_t)(keyed) << 8) | ((uint64_t)(hashed) << 9) | \
+   ((uint64_t)(key_len) << 16) | ((uint64_t)(out_len) << 24))
+#define PIKASEKO_DOMAIN_UNKEYED256 PIKASEKO_DOMAIN(0, 0, 0, 32)
+#define PIKASEKO_DOMAIN_UNKEYED64 PIKASEKO_DOMAIN(0, 0, 0, 8)
+
 #endif  // PIKASEKO256_CONSTS_H_

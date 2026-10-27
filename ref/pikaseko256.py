@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Jyrki Alakuijala
 # SPDX-License-Identifier: MIT
-"""PikasekoHash-256 in plain Python, written from SPEC.md and independent of the C code.
+"""PikasekoHash-256 version 1 in plain Python, written from SPEC.md and independent of the C
+code. Slow (milliseconds per short message), meant for checking implementations:
 
-Slow (milliseconds per short message), meant for checking implementations:
+    python3 ref/pikaseko256.py                  # check test/test_vectors.txt (all but the checksum)
+    python3 ref/pikaseko256.py --checksum       # also the checksum over lengths 0..2048 (seconds)
+    python3 ref/pikaseko256.py --hex 616263     # the unkeyed 256-bit digest of 'abc'
+    python3 ref/pikaseko256.py --hex 616263 --key 0011...   # keyed (key bytes in hex, any length)
+    python3 ref/pikaseko256.py --hex 616263 --bits 64       # the 64-bit hash
+    python3 ref/pikaseko256.py --hex 616263 --final 1       # reduced: one final step
 
-    python3 ref/pikaseko256.py                 # check test/test_vectors.txt (all but the checksum)
-    python3 ref/pikaseko256.py --checksum      # also the checksum over lengths 0..2048 (seconds)
-    python3 ref/pikaseko256.py --hex 616263    # hash the bytes 'abc', unkeyed
-    python3 ref/pikaseko256.py --hex 616263 --key 0102...  # keyed (64 key bytes in hex)
-    python3 ref/pikaseko256.py --hex 616263 --final 1      # reduced: one final step
-
-The digest is printed as out[0..3] in hex, as in the test vectors, and as 32 bytes.
+Digests are printed as bytes in hex (the 64-bit hash also as an integer).
 """
 import sys
 
@@ -126,18 +126,31 @@ def rotl64(x, n):
     return ((x << n) | (x >> (64 - n))) & MASK64 if n else x
 
 
-# ---- Sections 4 to 9 ----
+# ---- Sections 4 to 10 ----
 
-def initial_state(key):
+VERSION = 1
+
+
+def domain(keyed, key_hashed, key_len, out_len):
+    """Section 4: the domain word."""
+    return VERSION | (keyed << 8) | (key_hashed << 9) | (key_len << 16) | (out_len << 24)
+
+
+def initial_state(key_words, dom):
+    """Section 4. key_words: eight 64-bit integers (zero for the unkeyed hash)."""
     r = []
     for i in range(16):
         a = (PHI + i * PI) & 0xFFFFFFFF
-        r.append(vec([a * ((PHI + l * E) & 0xFFFFFFFF) ^ rotl64(key[(l + i) % 8], (4 * i) % 64)
-                      for l in range(8)]))
+        lanes_i = [a * ((PHI + l * E) & 0xFFFFFFFF) ^ rotl64(key_words[(l + i) % 8], (4 * i) % 64)
+                   for l in range(8)]
+        if i == 2:
+            lanes_i[0] ^= dom
+        r.append(vec(lanes_i))
     return r
 
 
 def step(r, t):
+    """Section 5."""
     s = 1 << (t % 4)
     c = 1 if s == 8 else 2 * s
     rot = rot1 if t % 2 == 0 else rot2
@@ -162,88 +175,134 @@ def step(r, t):
 F, M, G = (0, 5, 10, 15), (1, 4, 11, 14), (3, 6, 9, 12)
 
 
+def packets_of(msg):
+    """Section 6: padding and packets."""
+    n = len(msg)
+    padded = msg + b"\x80" + b"\x00" * ((55 - n) % 64) + (n & MASK64).to_bytes(8, "little")
+    assert len(padded) % 64 == 0
+    return [padded[i:i + 64] for i in range(0, len(padded), 64)]
+
+
+def key_words_of(key):
+    """Section 4: a key of any length to eight words and the key fields of the domain word."""
+    hashed = 0
+    if len(key) > 64:
+        key, hashed = digest(key, None, 32), 1
+    kb = key + b"\x00" * (64 - len(key))
+    return [int.from_bytes(kb[8 * i:8 * i + 8], "little") for i in range(8)], hashed, len(key)
+
+
+def digest(msg, key=None, out_len=32, final_steps=6):
+    """PikasekoHash-256 version 1: the out_len-byte digest (32, or 8 for the 64-bit hash)
+    of msg, keyed with the bytes key (any length, possibly empty) or unkeyed (key None).
+    final_steps other than 6 gives the reduced versions of analysis/challenges.md."""
+    assert out_len in (8, 32)
+    if key is None:
+        words, dom = [0] * 8, domain(0, 0, 0, out_len)
+    else:
+        words, hashed, klen = key_words_of(key)
+        dom = domain(1, hashed, klen, out_len)
+    r = initial_state(words, dom)
+    t = 0
+    pending = []  # Section 7: products of the previous group, xored in after the next step
+    packets = packets_of(msg)
+    for u in range(0, len(packets), 4):
+        q = packets[u:u + 4]
+        r = step(r, t); t += 1
+        for k, p in pending:
+            r[G[k]] = xor(r[G[k]], p)
+        for k, p in enumerate(q):
+            r[F[k]] = add(r[F[k]], p)
+        r = step(r, t); t += 1
+        r = step(r, t); t += 1
+        pending = [(k, mul32(r[M[k]], r[F[k]])) for k in range(len(q))]
+    for f in range(final_steps):  # Section 8
+        r = step(r, t); t += 1
+        if f == 0:
+            for k, p in pending:
+                r[G[k]] = xor(r[G[k]], p)
+    if final_steps == 0:
+        for k, p in pending:
+            r[G[k]] = xor(r[G[k]], p)
+    a = r[0]
+    for i in range(1, 16):
+        a = add(a, r[i])
+    s = aesenc(aesenc(a, add(r[1], r[2])), rot1(add(r[3], r[4])))
+    out = lanes(add(s, rot2(s)))[:4]
+    return b"".join(x.to_bytes(8, "little") for x in out)[:out_len]
+
+
 def absorb(r, t, packets):
-    """One absorption (section 7) of 1..4 64-byte packets into the state r (16 vectors) at
-    step index t. Returns the new state; the next step index is t + 3."""
+    """One absorption in the self-contained form used by analysis/challenges.md: from the
+    state r (sixteen 64-byte vectors) before step t: step t, inject the 1..4 packets, steps
+    t + 1 and t + 2, form the products, step t + 3, xor the products in. Returns the state;
+    the next absorption in this form starts at step t + 3 with its injection (its own first
+    step is the step t + 3 already run)."""
     r = step(r, t)
     for k, p in enumerate(packets):
         r[F[k]] = add(r[F[k]], p)
     r = step(r, t + 1)
-    prods = [mul32(r[M[k]], r[F[k]]) for k in range(len(packets))]
     r = step(r, t + 2)
+    prods = [mul32(r[M[k]], r[F[k]]) for k in range(len(packets))]
+    r = step(r, t + 3)
     for k, p in enumerate(prods):
         r[G[k]] = xor(r[G[k]], p)
     return r
 
 
-def pikaseko256(msg, key=None, final_steps=6):
-    """Returns out[0..3] (four 64-bit integers). key: eight 64-bit integers, or None.
-    final_steps other than 6 gives the reduced versions of analysis/challenges.md."""
-    key = key or [0] * 8
-    n = len(msg)
-    padded = msg + b"\x80" + b"\x00" * ((55 - n) % 64) + (n & MASK64).to_bytes(8, "little")
-    assert len(padded) % 64 == 0
-    packets = [padded[i:i + 64] for i in range(0, len(padded), 64)]
-    r = initial_state(key)
-    t = 0
-    for u in range(0, len(packets), 4):
-        r = absorb(r, t, packets[u:u + 4])
-        t += 3
-    for _ in range(final_steps):
-        r = step(r, t); t += 1
-    a = r[0]
-    for i in range(1, 16):
-        a = add(a, r[i])
-    s = aesenc(aesenc(a, add(r[1], r[2])), rot1(add(r[3], r[4])))
-    s = lanes(add(s, rot2(s)))
-    return s[:4]
+# ---- Test vectors (section 11) ----
+
+def vector_lines():
+    """The lines of test/test_vectors.txt except the checksum."""
+    buf = bytes(i % 256 for i in range(4200))
+    keys = [(n, bytes(range(n)) if n <= 256 else None) for n in (0, 32, 64, 100)]
+    lines = []
+    for n in (0, 1, 55, 56, 63, 64, 255, 256, 1023, 1024, 1025, 4096):
+        lines.append("unkeyed256 len %5d  %s" % (n, digest(buf[:n]).hex()))
+        lines.append("unkeyed64  len %5d  %s" % (n, digest(buf[:n], None, 8).hex()))
+        for klen, key in keys:
+            lines.append("keyed256 klen %3d len %5d  %s" % (klen, n, digest(buf[:n], key).hex()))
+        lines.append("keyed64  klen %3d len %5d  %s" % (32, n, digest(buf[:n], bytes(range(32)), 8).hex()))
+    return lines
 
 
-def digest_bytes(out):
-    return b"".join(x.to_bytes(8, "little") for x in out)
+def checksum_line():
+    buf = bytes(i % 256 for i in range(2048))
+    acc = 0
+    for n in range(2049):
+        d = digest(buf[:n])
+        for i in range(4):
+            acc = ((acc * 0x9E3779B97F4A7C15) & MASK64) ^ int.from_bytes(d[8 * i:8 * i + 8], "little")
+    return "unkeyed256, all lengths 0..2048 folded: %016x" % acc
 
 
 def check_vectors(path, checksum):
-    buf = bytes(i % 256 for i in range(4200))
-    key18 = [1, 2, 3, 4, 5, 6, 7, 8]
-    bad = n = 0
     with open(path) as f:
-        for line in f:
-            w = line.split()
-            if line.startswith("unkeyed len") or line.startswith("key 1..8 len"):
-                keyed = line.startswith("key")
-                length = int(w[3] if keyed else w[2])
-                want = [int(x, 16) for x in w[-4:]]
-                got = pikaseko256(buf[:length], key18 if keyed else None)
-                n += 1
-                if got != want:
-                    bad += 1
-                    print("MISMATCH", line.strip())
-            elif line.startswith("unkeyed, all lengths") and checksum:
-                acc = 0
-                for length in range(2049):
-                    for x in pikaseko256(buf[:length]):
-                        acc = ((acc * 0x9E3779B97F4A7C15) & MASK64) ^ x
-                n += 1
-                if acc != int(w[-1], 16):
-                    bad += 1
-                    print("MISMATCH checksum %016x" % acc)
-    print("Python reference: %d of %d test vectors reproduced" % (n - bad, n))
-    return bad == 0 and n > 0
+        want = [l.rstrip("\n") for l in f if l.strip() and not l.startswith("PikasekoHash")]
+    got = vector_lines() + ([checksum_line()] if checksum else [])
+    bad = 0
+    for i, line in enumerate(got):
+        if line not in want:
+            bad += 1
+            print("MISMATCH", line)
+    print("Python reference: %d of %d test vectors reproduced" % (len(got) - bad, len(got)))
+    return bad == 0
 
 
 def main(argv):
+    if "--print-vectors" in argv:  # writes test/test_vectors.txt (used when the function changes)
+        print("PikasekoHash-256 version %d test vectors (data byte i = i mod 256, key byte i = i; digests as bytes)" % VERSION)
+        for line in vector_lines():
+            print(line)
+        print(checksum_line())
+        return 0
     if "--hex" in argv:
         msg = bytes.fromhex(argv[argv.index("--hex") + 1])
-        key = None
-        if "--key" in argv:
-            kb = bytes.fromhex(argv[argv.index("--key") + 1])
-            assert len(kb) == 64, "the key is 64 bytes"
-            key = [int.from_bytes(kb[8 * i:8 * i + 8], "little") for i in range(8)]
+        key = bytes.fromhex(argv[argv.index("--key") + 1]) if "--key" in argv else None
+        bits = int(argv[argv.index("--bits") + 1]) if "--bits" in argv else 256
         final = int(argv[argv.index("--final") + 1]) if "--final" in argv else 6
-        out = pikaseko256(msg, key, final)
-        print(" ".join("%016x" % x for x in out))
-        print(digest_bytes(out).hex())
+        d = digest(msg, key, bits // 8, final)
+        print(d.hex() + ("  (%016x)" % int.from_bytes(d, "little") if bits == 64 else ""))
         return 0
     import os
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test", "test_vectors.txt")

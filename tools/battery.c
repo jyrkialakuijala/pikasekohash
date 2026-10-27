@@ -16,7 +16,15 @@
 
 #define OB 256  // output bits
 typedef struct { uint64_t w[4]; } H256;
-static inline H256 H(const void* p, size_t n, const uint64_t* key) { H256 h; pikaseko256(p, n, key, h.w); return h; }
+// The keyed 256-bit hash with the 64-byte key whose words are key[0..7], as four words.
+static inline H256 H(const void* p, size_t n, const uint64_t* key) {
+  uint8_t kb[64], d[32];
+  for (int i = 0; i < 64; i++) kb[i] = (uint8_t)(key[i / 8] >> (8 * (i % 8)));
+  pikaseko256_keyed(p, n, kb, 64, d);
+  H256 h;
+  for (int w = 0; w < 4; w++) { h.w[w] = 0; for (int j = 7; j >= 0; j--) h.w[w] = (h.w[w] << 8) | d[8 * w + j]; }
+  return h;
+}
 #if defined(__GNUC__) || defined(__clang__)
 static inline int Popcount64(uint64_t x) { return __builtin_popcountll(x); }
 #else

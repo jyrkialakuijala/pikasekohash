@@ -3,6 +3,29 @@
 All notable changes to this project are listed here. Any version that
 changes the output of the function changes the test vectors.
 
+## 0.1.0 (version 1) - 2026-10-27
+
+New function version: the test vectors change. The step, the constants, the
+padding and the fold are those of version 0.
+
+* Domain word in the initial value (version, keyed flag, hashed-key flag, key
+  length, digest length): the unkeyed hash, keyed hashes with every key length
+  (an empty or all-zero key included) and the 256-bit and 64-bit digests are
+  separate functions.
+* Keys are byte strings of any length; keys longer than 64 bytes are hashed
+  first.
+* The products are formed after the second step of an absorption and xored in
+  after the third (the next absorption's first step, or the first final
+  step), which removes the unkeyed attacker's control over them.
+* API: `pikaseko256_unkeyed`, `pikaseko256_keyed`, `pikaseko64_unkeyed`,
+  `pikaseko64_keyed`, `pikaseko256_init_unkeyed`, `pikaseko256_init_keyed`,
+  `pikaseko64_init_unkeyed`, `pikaseko64_init_keyed`, `pikaseko256_update`,
+  `pikaseko256_final`, `pikaseko64_final`; digests as bytes. The per-
+  implementation functions moved to the internal header `src/pikaseko256_impl.h`.
+* Key material is wiped after use.
+* Python reference, SPEC, ANALYSIS and paper updated; the version 0 reviews
+  are kept and marked as such.
+
 ## 0.0.2 (version 0) - 2026-10-27
 
 Same function and test vectors as 0.0.1.

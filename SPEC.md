@@ -1,7 +1,11 @@
 # PikasekoHash-256 specification
 
-Version 0 (experimental). This document defines the function completely. An
+Version 1 (experimental). This document defines the function completely. An
 implementation that follows it reproduces the test vectors in section 11.
+Version 1 differs from version 0 (release 0.0.2) in the domain word and the
+key handling (section 4), the timing of the products (section 7) and the
+64-bit hash (section 9); the step, the constants, the padding and the fold
+are unchanged.
 The reference implementations are `src/pikaseko256_portable.c` (portable C),
 `ref/pikaseko256.py` (plain Python, written from this text)
 and `src/pikaseko256_avx512.c` (AVX-512 and VAES); all three agree with this text, as
@@ -65,18 +69,41 @@ The state is sixteen vectors r0 .. r15 (8192 bits). A step counter t starts
 at 0 and increases by one with every step, through absorption and
 finalization.
 
-## 4. Key and initialization
+## 4. Key, domain word and initialization
 
-The key K is eight 64-bit words K[0..7] (512 bits). When a key is given as
-64 bytes, K[i] is bytes 8i .. 8i + 7, little-endian. The unkeyed hash is the
-keyed hash with K = 0 (all words zero); passing no key means K = 0.
+The function has an unkeyed and a keyed form, each with a 256-bit and a
+64-bit digest. A key is a byte string of any length, possibly empty.
 
-For i = 0..15 and l = 0..7, with the two factors computed modulo 2^32 and
-multiplied as a full 64-bit product:
+**Key words.** A key of up to 64 bytes is used as it is; a longer key is
+replaced by its unkeyed 256-bit digest (32 bytes, this specification), and
+the flag `hashed` is set. The key bytes, padded with zero bytes to 64, give
+eight 64-bit words K[0..7]: K[i] is bytes 8i .. 8i + 7, little-endian. The
+unkeyed form has K = 0.
+
+**Domain word.** A 64-bit word D, bytes from least significant:
+
+| byte | value |
+|---|---|
+| 0 | the version, 1 |
+| 1 | flags: bit 0 set for the keyed form, bit 1 set when the key was hashed |
+| 2 | the key length in bytes as used: 0..64 (32 for a hashed key; 0 unkeyed) |
+| 3 | the digest length in bytes: 32 or 8 |
+| 4..7 | zero |
+
+So the unkeyed 256-bit hash has D = 0x20000001 and the unkeyed 64-bit hash
+D = 0x08000001; a keyed hash with an empty key has D = 0x20000101 (256 bits).
+Every form, key length and digest length gives a different initial value.
+
+**Initial value.** For i = 0..15 and l = 0..7, with the two factors computed
+modulo 2^32 and multiplied as a full 64-bit product:
 
     a      = (PHI + i * PI) mod 2^32
     b      = (PHI + l * E)  mod 2^32
     r_i[l] = (a * b)  ^  rotl64(K[(l + i) mod 8], (4 i) mod 64)
+
+and then
+
+    r_2[0] = r_2[0] ^ D
 
 ## 5. The step
 
@@ -154,25 +181,34 @@ The feed registers, multiplicand registers and product targets are
 
 The packets are taken in order, four at a time: group number u holds packets
 P_{4u} .. P_{min(4u+3, N-1)}. The last group holds np = 1, 2, 3 or 4 packets;
-all others hold np = 4. One group is absorbed as follows, where Q_0..Q_{np-1}
-are its packets:
+all others hold np = 4. Each group leaves np products q_0..q_{np-1} pending;
+they are xored into the state after the next step, which is the first step
+of the next group or the first final step (section 8). One group is
+absorbed as follows, where Q_0..Q_{np-1} are its packets:
 
-    STEP()                                     step t
+    STEP()                                      step t
+    xor in the pending products of the previous group, if any:
+        r_{g_k} = r_{g_k} ^ q_k   for each of them
     for k in 0..np-1:  r_{f_k} = r_{f_k} + Q_k  (lane-wise addition mod 2^64)
-    STEP()                                     step t+1
-    for k in 0..np-1:  q_k = mul32(r_{m_k}, r_{f_k})   (from the state after step t+1)
-    STEP()                                     step t+2
-    for k in 0..np-1:  r_{g_k} = r_{g_k} ^ q_k
+    STEP()                                      step t+1
+    STEP()                                      step t+2
+    for k in 0..np-1:  q_k = mul32(r_{m_k}, r_{f_k})   (pending; from the state after step t+2)
 
-A group of np < 4 packets uses only the first np feeds, multiplicands and
-targets; it still costs three steps. Groups are absorbed one after the other;
-the step counter continues across groups, so group u starts at t = 3u.
+The pending products of a group use the state two steps after its packets
+entered, so in the unkeyed hash they are not one inverse AES round away from
+the packets (ANALYSIS.md, section 7). A group of np < 4 packets uses only the
+first np feeds, multiplicands and targets; it still costs three steps.
+Groups are absorbed one after the other; the step counter continues across
+groups, so group u starts at t = 3u.
 
 ## 8. Finalization
 
-After the last group, six more steps:
+After the last group, six more steps; the pending products of the last group
+are xored in after the first of them:
 
-    STEP() six times                           t = 3 ceil(N/4) .. 3 ceil(N/4) + 5
+    STEP()                                      t = 3 ceil(N/4)
+    r_{g_k} = r_{g_k} ^ q_k   for the pending products
+    STEP() five times                           t = 3 ceil(N/4) + 1 .. 3 ceil(N/4) + 5
 
 Then the fold, with all additions lane-wise modulo 2^64:
 
@@ -185,31 +221,42 @@ fold; rot1 here is fixed.
 
 ## 9. Output
 
-The output is four 64-bit words out[0..3]. The canonical 32-byte digest is
-out[0], out[1], out[2], out[3], each written little-endian. The 64-bit hash
-`pikaseko64` is out[0].
+The 256-bit digest is the 32 bytes of out[0], out[1], out[2], out[3], each
+written little-endian. The 64-bit digest is the 8 bytes of out[0] of the
+computation with the 64-bit domain word (section 4); as a number it is
+out[0]. It is not a part of the 256-bit digest of the same message.
 
 ## 10. Pseudocode
 
-    function PikasekoHash256(M, K = 0):
+    function PikasekoHash(M, key = none, width = 32):     width: 32 or 8 bytes
         n = byte length of M
+        if key is none: K = 0; D = 1 | width << 24
+        else:
+            hashed = len(key) > 64
+            if hashed: key = PikasekoHash(key, none, 32)
+            K = words of key || zeros (64 bytes), little-endian
+            D = 1 | 1 << 8 | hashed << 9 | len(key) << 16 | width << 24
         for i in 0..15, l in 0..7:
             r_i[l] = ((PHI + i*PI) mod 2^32) * ((PHI + l*E) mod 2^32)
                      ^ rotl64(K[(l+i) mod 8], 4i mod 64)
-        t = 0
+        r_2[0] ^= D
+        t = 0; pending = []
         P = packets of M || 0x80 || zeros || le64(n)       (N packets, section 6)
         for u in 0 .. ceil(N/4) - 1:
             Q  = P[4u .. min(4u+3, N-1)];  np = |Q|
             step(t); t += 1
+            for (k, q) in pending: r[g[k]] ^= q
             for k < np: r[f[k]] += Q[k]
             step(t); t += 1
-            for k < np: q[k] = mul32(r[m[k]], r[f[k]])
             step(t); t += 1
-            for k < np: r[g[k]] ^= q[k]
-        repeat 6 times: step(t); t += 1
+            pending = [(k, mul32(r[m[k]], r[f[k]])) for k < np]
+        step(t); t += 1
+        for (k, q) in pending: r[g[k]] ^= q
+        repeat 5 times: step(t); t += 1
         a = sum of r_0 .. r_15
         s = aesenc(aesenc(a, r1 + r2), rot1(r3 + r4))
-        return (s[0]+s[4], s[1]+s[5], s[2]+s[6], s[3]+s[7])
+        out = (s[0]+s[4], s[1]+s[5], s[2]+s[6], s[3]+s[7])
+        return the first width bytes of le64(out[0]) || .. || le64(out[3])
 
     function step(t):
         s = 1 << (t mod 4);  c = (s == 8) ? 1 : 2*s
@@ -231,34 +278,32 @@ Messages of up to 247 bytes (N <= 4) use 9 steps.
 
 ## 11. Test vectors
 
-Message bytes: byte i of the message is i mod 256. "key 1..8" is
-K = (1, 2, 3, 4, 5, 6, 7, 8). Each line gives out[0] .. out[3] in hex.
+Message byte i is i mod 256; key byte i is i. Digests are given as bytes in
+hex; "klen" is the key length in bytes (100 is hashed first).
 
-    unkeyed  len  0  4ce9ce973810692d 933bdf92669b1d6e 277e33f96dacc156 9b8ea902b68c1524
-    key 1..8 len  0  b51bcf8389ec302d f308920a30644943 8bc96cf0c183894b b8b03fa938843fa0
-    unkeyed  len  1  e7c9b70e06ab6227 7f12a8928cc8e7f0 a9c7f2d3f32cc7ba 17f4a037b67cd148
-    key 1..8 len  1  9207d99b7e4cc590 7e25960605692074 f9f411794eeb900d eb9fe6abe5f7ac71
-    unkeyed  len 55  9e81b0fae8ed6dc0 03dd7d2aeae33099 e230a765098761a7 51a2ca0db29f1ba0
-    key 1..8 len 55  8f50d80647a4b127 cfde76a52061df93 234c5c9f9f603c67 b389aa7cfbc7d26f
-    unkeyed  len 56  e14d664c8d8d2211 2984b77b33f8b7e3 523c99d419775ad5 a89c748918c88069
-    key 1..8 len 56  5404f02ed70670fc 8f0f62cceaf42e13 1ca41f0cc11a41ca c3d485b4d1d46e02
-    unkeyed  len 64  4e6e370a080d35d6 80be6c20bbc346cf 276bf04fe3acc9c1 4eccdedbbddd4e4c
-    key 1..8 len 64  4f1c2beb2f35bd19 78c22dc619d5d41a 800349c7c7546c05 520b9835c6ed42a5
+    unkeyed256 len     0  b1ef4649151f3910e1cbbe7744ce15400fb62790873ac59bd5e9b875282750c7
+    unkeyed64  len     0  505331b8934bd5bc
+    keyed256 klen   0 len     0  c352fec6c1862efea18b465c20cbc47d35d2245e1eed79610a543d3fca60a868
+    keyed256 klen  32 len     0  c6558ab3659f18f979981d0da35e48ae70d5ed68967cbc48a6787b4ca6bb6660
+    keyed256 klen 100 len     0  08805c7425eeecde07b0d4b847df13406c10ca4f81bf2eb3f640b6c2f51c1c22
+    keyed64  klen  32 len     0  3a390bac1d0e57c8
+    unkeyed256 len     1  a8000f4ee8a9e6bc4053aeb4154d790e2e598d432287eaa8d5dc8faa2ba7bdcd
+    unkeyed256 len    64  c3405d64d7e20a279f565c3d192ca1425798ecab7bf6241ac496803a7ca75426
+    keyed256 klen  32 len    64  4bec62dd15437e787615ae0c93051a6670fc9a0f843deafc2c60b6c1d9422598
 
-As a 32-byte digest, the unkeyed hash of the empty message is
-
-    2d69103897cee94c 6e1d9b6692df3b93 56c1ac6df9337e27 24158cb602a98e9b
-
-(written as bytes in order, grouped by eight). The complete list, including
-longer messages and a checksum over all lengths 0..2048, is
-`test/test_vectors.txt`.
+The 64-bit hash as a number is the digest read little-endian: for the empty
+message, unkeyed, 0xbcd54b93b8315350. The complete list (lengths 0 to 4096,
+key lengths 0, 32, 64 and 100, and a checksum over all lengths 0..2048) is
+`test/test_vectors.txt`; `ref/pikaseko256.py --print-vectors` writes it.
 
 ## 12. Notes for implementers
 
 * The step is not a permutation of the state (section 4 of ANALYSIS.md).
   Implementations must not assume invertibility.
-* The key enters only through the initial xor. There is no domain separation
-  yet: the zero key gives the unkeyed hash.
+* The key and the domain word enter only through the initial value.
+* No packet enters before step 0, so the unkeyed states after step 0 (one per
+  digest width) are constants; implementations may start from them
+  (`src/pikaseko256_step0.h`).
 * The AVX-512 implementation maps a vector to one zmm register: aesenc is
   VAESENC, rot1 and rot2 are VSHUFI64X2 with immediates 0x39 and 0x4E,
   mul32 is VPMULUDQ, the keys are VPXORQ (the step-constant key is one

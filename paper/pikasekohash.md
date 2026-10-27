@@ -2,7 +2,7 @@
 
 Jyrki Alakuijala
 
-October 2026 (version 0, draft)
+October 2026 (version 1, draft)
 
 ## Abstract
 
@@ -14,11 +14,13 @@ per register, keyed by xors of the other registers of the group, and a
 stride schedule makes a one-bit difference reach every register in three
 steps. Message packets of 64 bytes enter four at a time into a transversal
 set of registers, and one 32 x 32 -> 64-bit product per packet, formed from
-AES-mixed state, is xored in two steps later. Six final steps and a fold
+AES-mixed state two steps after the injection, is xored in one step later.
+A domain word in the initial value separates the unkeyed hash, keys of each
+length and the 256-bit and 64-bit digests. Six final steps and a fold
 through two AES rounds produce the output. On a Zen 5 core it hashes
 24 GB/s in bulk on one thread, 1.7 times HighwayHash and twice BLAKE3 on one
 thread,
-and any message up to 128 bytes takes 36 ns. It passes every statistical
+and any message up to 128 bytes takes 37 ns. It passes every statistical
 test we applied. Our own cryptanalysis found no attack on the hash, but it
 found that the step function is not injective in a constructive way:
 collisions of one step are built in constant time from a chosen state, so
@@ -93,9 +95,13 @@ i is
 
     r_i[l] = (phi + i*pi) * (phi + l*e)  ^  rotl64(K[(l + i) mod 8], 4i)
 
-for a 512-bit key K; the unkeyed hash uses K = 0. The 128 products are
-distinct and dense. The initial value costs one multiply per register and
-needs no table.
+where K is the key, zero-padded to 512 bits (a key longer than 64 bytes is
+hashed first), and K = 0 for the unkeyed hash. Lane 0 of r_2 is then xored
+with a domain word holding the version, whether the hash is keyed, the key
+length and the digest length (32 or 8 bytes), so no key gives the unkeyed
+hash and the 64-bit hash is not a part of the 256-bit one. The 128 products
+are distinct and dense. The initial value costs one multiply per register
+and needs no table.
 
 **Step.** Step t uses stride s = 2^(t mod 4), cycling 1, 2, 4, 8, and cross
 offset c = 2s (c = 1 when s = 8). The registers form four groups
@@ -116,12 +122,13 @@ absorbed four at a time. With feed registers f = (0, 5, 10, 15), multiplicand
 registers m = (1, 4, 11, 14) and product targets g = (3, 6, 9, 12), a group
 P_0..P_3 starting at step t is
 
-    step t;    r_{f_k} += P_k
-    step t+1;  q_k = mul32(r_{m_k}, r_{f_k})
-    step t+2;  r_{g_k} ^= q_k
+    step t;    r_{g_k} ^= q'_k (the previous group's products);  r_{f_k} += P_k
+    step t+1
+    step t+2;  q_k = mul32(r_{m_k}, r_{f_k})
 
-A last group of fewer than four packets uses the first feeds, multiplicands
-and targets only.
+and the products q_k of the last group are xored in after the first final
+step. A last group of fewer than four packets uses the first feeds,
+multiplicands and targets only.
 
 **Padding and output.** Padding is Merkle-Damgård strengthening: the byte
 0x80, zeros, and the message length in bytes as a little-endian 64-bit word
@@ -196,10 +203,11 @@ hash.
 should run at least as long as it takes a difference to reach 99% of the
 state bytes, preferably twice. That takes four steps (section 4.1). The last
 packet is followed by two steps of its absorption and six final steps, eight
-in all, twice the diffusion length. The last products enter before the
-first final step, so they get all six. Moving the product injection later,
-into the finalization, was measured and produced a statistical artefact at
-reduced final steps, so the finalization contains no multiplications.
+in all, twice the diffusion length. The last products enter after the first
+final step, so five steps follow them. Version 0 xored the products in one
+step earlier; the later timing (section 4.6) showed one high statistic at
+two final steps, which repeated measurements over 32 keys traced to a single
+fixed input set rather than the design.
 
 **Fold.** A plain sum of the registers is a linear projection of the final
 state; with one final step it left an exact zero sum on output bit 0 over
@@ -360,14 +368,17 @@ after three steps but proves no output bit balanced.
 
 ### 4.6 Products in the unkeyed hash
 
-The product operands are read after step t+1, one AES round (or a linear
-key path) from the freely chosen feed register. With the state public,
-inverting that round sets the operands: all four products of an absorption
-can be forced to zero in milliseconds (measured). This is not a collision,
-since the packet still enters through the addition, but in the unkeyed hash
-the products add no non-linearity the attacker must pay for. The
-product-independent bounds of section 4.4 are the relevant ones there. With
-a secret key the state is unknown and the products cannot be steered.
+In version 0 the product operands were read after step t+1, one AES round
+(or a linear key path) from the freely chosen feed register. With the state
+public, inverting that round set the operands: all four products of an
+absorption could be forced to zero in milliseconds (measured). This was not
+a collision, since the packet still enters through the addition, but in the
+unkeyed hash the products added no non-linearity the attacker had to pay
+for. Version 1 reads the operands after step t+2, two steps and registers
+the packet has not reached away from it, which removes that handle (argued)
+at no measured cost. The product-independent bounds of section 4.4 remain
+the conservative ones. With a secret key the state is unknown and the
+products cannot be steered in either version.
 
 ### 4.7 Other properties
 
@@ -386,9 +397,9 @@ a secret key the state is unknown and the products cannot be steered.
 * **Near-collisions.** With the attacker's best single-bit difference in the
   last packet of the unkeyed hash, the output Hamming distance is
   indistinguishable from random even with no final steps (measured).
-* **No domain separation.** The zero key is the unkeyed hash, and the 64-bit
-  output is the first word of the 256-bit output. A parameter word in the
-  initial value is planned.
+* **Domain separation.** The domain word separates the unkeyed hash, every
+  key length (an all-zero key is not the unkeyed hash) and the two digest
+  widths.
 
 ## 5 Statistical evaluation
 
@@ -442,15 +453,16 @@ scales over cores (with several threads it overtakes PikasekoHash on large
 inputs), while PikasekoHash has no parallel mode. Only BLAKE3 and SHA-256 in
 the table are vetted cryptographic hashes; PikasekoHash is not, and the
 non-cryptographic hashes make no security claim at all. Short inputs are not
-compared here: PikasekoHash pays its nine-step minimum (36 ns) on every
+compared here: PikasekoHash pays its nine-step minimum (37 ns) on every
 message, which is far more than the non-cryptographic hashes spend.
 
 The bulk loop takes about 14.5 cycles per 64 bytes, 24 GB/s at 1 MiB. The
 two AES pipes alone need 12 of them (96 AES rounds on 512-bit registers per
 256 bytes at two per cycle: 48 cycles per 256 bytes); the shuffle-to-AES recurrence and the
-multiplies account for the rest. Every message up to 128 bytes takes 36 ns,
-256 bytes 45 ns and 1 KiB 76 ns, measured as the latency of dependent calls;
-a key adds about 2 ns. The minimum is nine steps.
+multiplies account for the rest. Every message up to 128 bytes takes 37 ns,
+256 bytes 48 ns and 1 KiB 78 ns, measured as the latency of dependent calls;
+a key adds about 1 ns to the hash and about 11 ns of key setup in the
+library's keyed functions. The minimum is nine steps.
 
 ## 7 Implementation
 
@@ -481,8 +493,11 @@ than the AVX-512 code.
   construction, is the next design change. A permutation step was measured:
   it costs 28% speed and lowers several truncated-model bounds, and with
   delayed products its absorption is not a bijection either.
-* A domain-separation word, an extendable output mode and a tree mode for
-  several cores are planned (the streaming interface exists).
+* An extendable output mode and a tree mode for several cores are planned;
+  the domain word has room for them.
+* The reviews of section 4 were made on version 0; the semi-free-start
+  question in particular should be revisited with the version 1 product
+  timing.
 * The AVX2 + VAES, AES-NI and ARMv8 versions are to be measured on the CPUs
   they are meant for, and all versions on Intel cores.
 * Bounds with bit-level or super-box models, a division-property bound for
