@@ -3,7 +3,9 @@
 All notable changes to this project are listed here. Any version that
 changes the output of the function changes the test vectors.
 
-## Unreleased
+## 0.0.2 (version 0) - 2026-10-27
+
+Same function and test vectors as 0.0.1.
 
 * Paper (paper/pikasekohash.md) describing the design and its analysis.
 * Statistical results of the final design in analysis/results/statistics.txt.

@@ -6,7 +6,7 @@
 # With PIKASEKO256_SIMD=OFF the library contains only the portable code and
 # PIKASEKO256_PORTABLE_ONLY is defined for everything that links it.
 cmake_minimum_required(VERSION 3.16)
-project(pikaseko256 VERSION 0.0.1 LANGUAGES C)
+project(pikaseko256 VERSION 0.0.2 LANGUAGES C)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
