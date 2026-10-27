@@ -9,6 +9,12 @@
 // it. In a portable-only build, or when the environment variable
 // PIKASEKO256_FORCE_PORTABLE=1 is set, only the portable tests run: the vectors, the
 // checksum, a reduced alignment and key sweep, streaming and step consistency.
+#if defined(__unix__) || defined(__APPLE__)
+#define _DEFAULT_SOURCE 1  // MAP_ANONYMOUS
+#include <sys/mman.h>
+#include <unistd.h>
+#define HAVE_MMAP 1
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -187,6 +193,57 @@ static long Streaming(const uint8_t* buf, const uint64_t* key18, HashFn* hash, I
   return bad;
 }
 
+#ifdef HAVE_MMAP
+// Messages that end at the last byte before an inaccessible page, and messages that start
+// at the first byte after one: a read past the end or before the start faults. Every
+// implementation the CPU has, one-shot and streaming, lengths 0..2048.
+static int GuardPages(void) {
+  const size_t page = (size_t)sysconf(_SC_PAGESIZE), span = (2048 / page + 1) * page;
+  uint8_t* base = (uint8_t*)mmap(NULL, span + 2 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (base == MAP_FAILED) { printf("guard pages: mmap failed, skipped\n"); return 0; }
+  uint8_t* body = base + page;
+  if (mprotect(base, page, PROT_NONE) || mprotect(body + span, page, PROT_NONE)) {
+    printf("guard pages: mprotect failed, skipped\n");
+    munmap(base, span + 2 * page);
+    return 0;
+  }
+  for (size_t i = 0; i < span; i++) body[i] = (uint8_t)Next();
+  HashFn* hashes[5] = {pikaseko256_portable, pikaseko256};
+  UpdateFn* updates[5] = {pikaseko256_update_portable, pikaseko256_update};
+  int n = 2;
+#if defined(PIKASEKO256_HAVE_X86)
+  const int level = pikaseko256_cpu_level();
+  if (level >= 3) { hashes[n] = pikaseko256_avx512; updates[n++] = pikaseko256_update_avx512; }
+  if (level >= 2) { hashes[n] = pikaseko256_avx2; updates[n++] = pikaseko256_update_avx2; }
+  if (level >= 1) { hashes[n] = pikaseko256_aesni; updates[n++] = pikaseko256_update_aesni; }
+#elif defined(PIKASEKO256_HAVE_NEON)
+  if (pikaseko256_cpu_level() >= 1) { hashes[n] = pikaseko256_neon; updates[n++] = pikaseko256_update_neon; }
+#endif
+  long bad = 0, count = 0;
+  for (size_t len = 0; len <= 2048; len += len < 300 ? 1 : 13) {
+    const uint8_t* ends = body + span - len;  // ends at the guard page
+    const uint8_t* starts = body;             // starts right after the other one
+    uint64_t want_e[4], want_s[4];
+    pikaseko256_portable(ends, len, NULL, want_e);
+    pikaseko256_portable(starts, len, NULL, want_s);
+    for (int m = 0; m < n; m++) {
+      uint64_t got[4];
+      hashes[m](ends, len, NULL, got); bad += memcmp(got, want_e, 32) != 0;
+      hashes[m](starts, len, NULL, got); bad += memcmp(got, want_s, 32) != 0;
+      pikaseko256_ctx ctx;
+      pikaseko256_init_portable(&ctx, NULL);
+      updates[m](&ctx, ends, len / 3);
+      updates[m](&ctx, ends + len / 3, len - len / 3);
+      pikaseko256_final_portable(&ctx, got); bad += memcmp(got, want_e, 32) != 0;
+      count += 3;
+    }
+  }
+  munmap(base, span + 2 * page);
+  printf("guard pages (%d implementations): %ld digests, %ld mismatches\n", n, count, bad);
+  return bad != 0;
+}
+#endif
+
 int main(void) {
   static uint8_t buf[4200 + 64], buf0[4200];
   int fails = 0;
@@ -332,6 +389,9 @@ int main(void) {
       fails += StepsVsPortable(impl[m].steps, impl[m].name);
     }
   }
+#endif
+#ifdef HAVE_MMAP
+  fails += GuardPages();
 #endif
   fails += StepsPortableConsistency();
   if (!avx) printf("(AVX-512 tests were skipped)\n");

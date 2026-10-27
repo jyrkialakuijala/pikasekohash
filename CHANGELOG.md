@@ -29,6 +29,8 @@ changes the output of the function changes the test vectors.
   x86 implementations; Windows CI job.
 * `make fuzz`: libFuzzer target comparing every implementation (one-shot and
   streaming) with the portable one under ASan and UBSan; run in CI.
+* Guard-page test: messages that end at, or start right after, an inaccessible
+  page, for every implementation (POSIX systems).
 * `pikaseko256_key_from_bytes` and `pikaseko256_digest_to_bytes`: byte forms
   of the key and the digest, independent of the host byte order.
 
