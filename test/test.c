@@ -26,6 +26,8 @@
 
 #if defined(PIKASEKO256_HAVE_X86) || defined(PIKASEKO256_HAVE_NEON)
 #define HAVE_SIMD 1
+#endif
+#ifdef PIKASEKO256_HAVE_X86
 static int ForcePortable(void) {
   const char* e = getenv("PIKASEKO256_FORCE_PORTABLE");
   return e && *e && !(e[0] == '0' && e[1] == 0);

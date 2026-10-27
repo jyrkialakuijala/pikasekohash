@@ -32,7 +32,7 @@ In the implementations (`src/`):
 * side channels: timing, cache or branch behaviour that depends on the key
   or the message contents (the message length is not hidden, by design);
 * out-of-bounds reads or writes, undefined behaviour, or any input on which
-  the AVX-512 and portable implementations disagree or differ from SPEC.md.
+  two implementations disagree or one differs from SPEC.md.
 
 ## Reporting cryptanalysis
 
@@ -40,8 +40,8 @@ This is a research design, and cryptanalysis is what it needs. Please report
 attacks, distinguishers, improved bounds and corrections publicly by
 opening an issue (there is a "Cryptanalysis result" template), or link to
 your paper or preprint. [analysis/challenges.md](analysis/challenges.md)
-lists concrete targets on reduced versions, with what is known about each. Public discussion helps everyone who studies the
-design. Results will be credited in ANALYSIS.md.
+lists concrete targets on reduced versions, with what is known about each.
+Public discussion helps everyone who studies the design. Results will be credited in ANALYSIS.md.
 
 ## Reporting implementation vulnerabilities
 
