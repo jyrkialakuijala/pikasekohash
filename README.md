@@ -197,6 +197,8 @@ third step. After the last packets come six more steps. The output is the
 sum of all registers, passed through two AES rounds keyed by sums of other
 registers and folded to 256 bits.
 
+![One step](docs/step.svg)
+
 The full definition is in [SPEC.md](SPEC.md).
 
 ## Documents
