@@ -273,22 +273,29 @@ static void Init(Slice r[16], const uint64_t key[8]) {
   }
 }
 
-void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
-  const uint8_t* m = (const uint8_t*)data;
-  Slice cs[4];
-  SliceConsts(cs);
-  Slice r[16];
-  Init(r, key);
-  // Packets: len / 64 full ones, then the padding (1 or 2 packets).
-  const size_t full = len / 64, rem = len % 64;
+// Absorbs ngroups groups of four full packets (256 bytes each) from m, starting at step t;
+// returns the next step index.
+static unsigned AbsorbGroups(Slice r[16], unsigned t, const uint8_t* m, size_t ngroups, const Slice cs[4]) {
+  for (size_t g = 0; g < ngroups; g++, m += 256) {
+    Reg P[4];
+    for (int k = 0; k < 4; k++) BytesToLanes(m + 64 * k, P[k].l, 8);
+    t = Absorb(r, t, P, 4, cs);
+  }
+  return t;
+}
+
+// The last n (0..255) message bytes at m, the padding, the final steps and the fold. t is
+// the next step index, len the length of the whole message.
+static void Finish(Slice r[16], unsigned t, const uint8_t* m, size_t n, uint64_t len, const Slice cs[4], uint64_t out[4]) {
+  // Packets: n / 64 full ones, then the padding (1 or 2 packets).
+  const size_t full = n / 64, rem = n % 64;
   uint8_t tail[128];
   memset(tail, 0, sizeof tail);
   if (rem) memcpy(tail, m + 64 * full, rem);
   tail[rem] = 0x80;
   const size_t ntail = rem < 56 ? 1 : 2;
-  for (int b = 0; b < 8; b++) tail[64 * ntail - 8 + b] = (uint8_t)((uint64_t)len >> (8 * b));
-  const size_t npk = full + ntail;
-  unsigned t = 0;
+  for (int b = 0; b < 8; b++) tail[64 * ntail - 8 + b] = (uint8_t)(len >> (8 * b));
+  const size_t npk = full + ntail;  // 1..5
   for (size_t g = 0; g < npk; g += 4) {
     const int np = npk - g >= 4 ? 4 : (int)(npk - g);
     Reg P[4];
@@ -308,6 +315,73 @@ void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], u
   const Slice k1 = ToSlice(Add(x[1], x[2])), k2 = RotS(ToSlice(Add(x[3], x[4])), 1);
   const Reg s = FromSlice(Aes(Aes(ToSlice(a), &k1), &k2));
   for (int l = 0; l < 4; l++) out[l] = s.l[l] + s.l[l + 4];
+}
+
+void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
+  const uint8_t* m = (const uint8_t*)data;
+  Slice cs[4];
+  SliceConsts(cs);
+  Slice r[16];
+  Init(r, key);
+  const unsigned t = AbsorbGroups(r, 0, m, len / 256, cs);
+  Finish(r, t, m + (len - len % 256), len % 256, len, cs, out);
+}
+
+// Streaming (see pikaseko256.h): the context keeps the state in normal form.
+static void LoadState(Slice r[16], const pikaseko256_ctx* ctx) {
+  for (int i = 0; i < 16; i++) {
+    Reg x;
+    memcpy(x.l, ctx->r + 8 * i, 64);
+    r[i] = ToSlice(x);
+  }
+}
+static void StoreState(pikaseko256_ctx* ctx, const Slice r[16]) {
+  for (int i = 0; i < 16; i++) {
+    const Reg x = FromSlice(r[i]);
+    memcpy(ctx->r + 8 * i, x.l, 64);
+  }
+}
+
+void pikaseko256_init_portable(pikaseko256_ctx* ctx, const uint64_t key[8]) {
+  Slice r[16];
+  Init(r, key);
+  StoreState(ctx, r);
+  ctx->len = 0; ctx->t = 0; ctx->nbuf = 0;
+}
+
+void pikaseko256_update_portable(pikaseko256_ctx* ctx, const void* data, size_t len) {
+  const uint8_t* p = (const uint8_t*)data;
+  ctx->len += len;
+  if (len < 256 - (size_t)ctx->nbuf) {
+    if (len) memcpy(ctx->buf + ctx->nbuf, p, len);
+    ctx->nbuf += (unsigned)len;
+    return;
+  }
+  Slice cs[4];
+  SliceConsts(cs);
+  Slice r[16];
+  LoadState(r, ctx);
+  unsigned t = ctx->t;
+  if (ctx->nbuf) {
+    const size_t take = 256 - ctx->nbuf;
+    memcpy(ctx->buf + ctx->nbuf, p, take);
+    t = AbsorbGroups(r, t, ctx->buf, 1, cs);
+    p += take; len -= take; ctx->nbuf = 0;
+  }
+  t = AbsorbGroups(r, t, p, len / 256, cs);
+  p += len - len % 256;
+  ctx->nbuf = (unsigned)(len % 256);
+  if (ctx->nbuf) memcpy(ctx->buf, p, ctx->nbuf);
+  ctx->t = t;
+  StoreState(ctx, r);
+}
+
+void pikaseko256_final_portable(const pikaseko256_ctx* ctx, uint64_t out[4]) {
+  Slice cs[4];
+  SliceConsts(cs);
+  Slice r[16];
+  LoadState(r, ctx);
+  Finish(r, ctx->t, ctx->buf, ctx->nbuf, ctx->len, cs, out);
 }
 
 void pikaseko256_unkeyed_portable(const void* data, size_t len, uint64_t out[4]) {

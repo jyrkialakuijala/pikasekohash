@@ -10,6 +10,9 @@ changes the output of the function changes the test vectors.
 * Security targets per mode (ANALYSIS.md); figure of the step (docs/step.svg).
 * The analysis entry points `pikaseko256_steps` and `pikaseko256_steps_portable`
   moved to `include/pikaseko256_analysis.h`.
+* Streaming interface: `pikaseko256_init`, `pikaseko256_update`,
+  `pikaseko256_final` and their `_portable` versions, sharing one context type.
+  Output unchanged.
 
 ## 0.0.1 (version 0) - 2026-10-26
 

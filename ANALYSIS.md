@@ -374,7 +374,8 @@ differential and no key-independent collision (measured).
   hash and a forgeable MAC without any error.
 * **Byte orders** are defined in SPEC.md: key words and output words are
   little-endian; the portable code is independent of host byte order.
-* **No streaming interface** and no run-time CPU dispatch.
+* **Streaming interface** (init, update, final), equal to the one-shot
+  function; no run-time CPU dispatch.
 
 ## 13. Open problems and planned changes
 
@@ -390,7 +391,8 @@ differential and no key-independent collision (measured).
 3. **Domain separation word**: a parameter word (version, keyed flag, output
    length, mode) xored into the initial value, so that keyed with the zero
    key differs from unkeyed and the 64-bit and 256-bit outputs are separated.
-4. **Streaming interface** (init, update, final) with the same schedule.
+4. (Done after version 0: streaming interface, init, update, final, with
+   the same schedule and the same output.)
 5. Product timing: read the operands after step t+2 to remove unkeyed
    steering, once its statistical artefact at two final steps is understood.
 6. A fold that mixes the block halves (section 8).

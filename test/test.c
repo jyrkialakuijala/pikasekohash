@@ -133,6 +133,48 @@ static int StepsPortableConsistency(void) {
   return sb != 0;
 }
 
+typedef void InitFn(pikaseko256_ctx*, const uint64_t*);
+typedef void UpdateFn(pikaseko256_ctx*, const void*, size_t);
+typedef void FinalFn(const pikaseko256_ctx*, uint64_t*);
+
+// Streaming against one-shot: lengths 0..maxlen (step lstep), unkeyed and keyed, the whole
+// message in one update, random pieces (with a digest of every prefix taken on the way,
+// which must not disturb the context), and single bytes. Returns mismatches.
+static long Streaming(const uint8_t* buf, const uint64_t* key18, HashFn* hash, InitFn* init, UpdateFn* update,
+                      FinalFn* final, size_t maxlen, size_t lstep, const char* name) {
+  long n = 0, bad = 0;
+  for (size_t len = 0; len <= maxlen; len += len < 70 ? 1 : lstep)
+    for (int kc = 0; kc < 2; kc++) {
+      const uint64_t* kp = kc ? key18 : NULL;
+      uint64_t want[4], got[4], pre[4], part[4];
+      hash(buf, len, kp, want);
+      pikaseko256_ctx ctx;
+      init(&ctx, kp); update(&ctx, buf, len); final(&ctx, got);
+      n++; bad += memcmp(want, got, 32) != 0;
+      init(&ctx, kp);
+      for (size_t pos = 0; pos < len;) {
+        size_t piece = (size_t)(Next() % 300);
+        if (piece > len - pos) piece = len - pos;
+        update(&ctx, buf + pos, piece);
+        pos += piece;
+        if (Next() % 4 == 0) {
+          final(&ctx, part); hash(buf, pos, kp, pre);
+          n++; bad += memcmp(part, pre, 32) != 0;
+        }
+      }
+      final(&ctx, got);
+      n++; bad += memcmp(want, got, 32) != 0;
+      if (len <= 600 && len % 3 == 0) {
+        init(&ctx, kp);
+        for (size_t i = 0; i < len; i++) update(&ctx, buf + i, 1);
+        final(&ctx, got);
+        n++; bad += memcmp(want, got, 32) != 0;
+      }
+    }
+  printf("streaming (%s): %ld digests, %ld mismatches\n", name, n, bad);
+  return bad;
+}
+
 int main(void) {
   static uint8_t buf[4200 + 64];
   int fails = 0;
@@ -187,6 +229,26 @@ int main(void) {
     fails += !ok;
   }
 
+  fails += Streaming(buf, key18, pikaseko256_portable, pikaseko256_init_portable, pikaseko256_update_portable,
+                     pikaseko256_final_portable, avx ? 1100 : 600, avx ? 31 : 97, "portable") != 0;
+#ifndef PIKASEKO256_NO_AVX512
+  if (avx) {
+    fails += Streaming(buf, key18, pikaseko256, pikaseko256_init, pikaseko256_update, pikaseko256_final, 4100, 3,
+                       "AVX-512") != 0;
+    // The context is the same for both implementations: start with one, continue with the other.
+    uint64_t want[4], got[4];
+    pikaseko256(buf, 3000, key18, want);
+    pikaseko256_ctx ctx;
+    pikaseko256_init(&ctx, key18);
+    pikaseko256_update(&ctx, buf, 777);
+    pikaseko256_update_portable(&ctx, buf + 777, 1000);
+    pikaseko256_update(&ctx, buf + 1777, 1223);
+    pikaseko256_final_portable(&ctx, got);
+    const int ok = !memcmp(want, got, 32);
+    printf("streaming, implementations mixed: %s\n", ok ? "ok" : "FAIL");
+    fails += !ok;
+  }
+#endif
 #ifndef PIKASEKO256_NO_AVX512
   if (avx) fails += StepsAvxVsPortable();
 #endif

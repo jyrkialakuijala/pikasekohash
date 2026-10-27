@@ -459,8 +459,8 @@ than the AVX-512 code.
   construction, is the next design change. A permutation step was measured:
   it costs 28% speed and lowers several truncated-model bounds, and with
   delayed products its absorption is not a bijection either.
-* A domain-separation word, a streaming interface, an extendable output mode
-  and a tree mode for several cores are planned.
+* A domain-separation word, an extendable output mode and a tree mode for
+  several cores are planned (the streaming interface exists).
 * AES-NI with AVX2 and ARMv8 versions are yet to be written and measured,
   as are measurements on Intel cores.
 * Bounds with bit-level or super-box models, a division-property bound for

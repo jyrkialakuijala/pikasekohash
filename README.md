@@ -108,6 +108,13 @@ uint64_t pikaseko64(const void* data, size_t len, const uint64_t key[8]);
 void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
 void pikaseko256_unkeyed_portable(const void* data, size_t len, uint64_t out[4]);
 uint64_t pikaseko64_portable(const void* data, size_t len, const uint64_t key[8]);
+
+// Streaming: same result as pikaseko256 for the concatenation of the pieces.
+// final does not change the context. The context is shared by both implementations.
+void pikaseko256_init(pikaseko256_ctx* ctx, const uint64_t key[8]);
+void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len);
+void pikaseko256_final(const pikaseko256_ctx* ctx, uint64_t out[4]);
+// and pikaseko256_init_portable, pikaseko256_update_portable, pikaseko256_final_portable
 ```
 
 `include/pikaseko256_analysis.h` declares the step function alone, for
@@ -139,7 +146,9 @@ Notes for use:
 * The zero key and the NULL key give the unkeyed hash. There is no domain
   separation between keyed and unkeyed use, or between the 64-bit and the
   256-bit output. Never use an all-zero key as a secret.
-* The interface is one-shot; there is no streaming interface yet.
+* For a message in pieces, use `pikaseko256_init`, `pikaseko256_update` and
+  `pikaseko256_final` (and their `_portable` versions); the result equals the
+  one-shot function.
 * The message length is not hidden: running time depends on it.
 
 ## Speed

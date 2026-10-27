@@ -27,6 +27,23 @@ void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], u
 void pikaseko256_unkeyed_portable(const void* data, size_t len, uint64_t out[4]);
 uint64_t pikaseko64_portable(const void* data, size_t len, const uint64_t key[8]);
 
+// Streaming: the same function as above for a message given in pieces. The context holds
+// the state in normal form, so a hash started with one implementation can be continued
+// with the other. final does not change the context (more data can still be added).
+typedef struct {
+  uint64_t r[128];  // state: word 8i + l is lane l of register r_i
+  uint64_t len;     // message bytes so far
+  unsigned t;       // next step index
+  unsigned nbuf;    // bytes in buf (0..255): the incomplete group of four packets
+  uint8_t buf[256];
+} pikaseko256_ctx;
+void pikaseko256_init(pikaseko256_ctx* ctx, const uint64_t key[8]);  // key NULL: zero key
+void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len);
+void pikaseko256_final(const pikaseko256_ctx* ctx, uint64_t out[4]);
+void pikaseko256_init_portable(pikaseko256_ctx* ctx, const uint64_t key[8]);
+void pikaseko256_update_portable(pikaseko256_ctx* ctx, const void* data, size_t len);
+void pikaseko256_final_portable(const pikaseko256_ctx* ctx, uint64_t out[4]);
+
 // The step function alone, for analysis, is declared in pikaseko256_analysis.h.
 
 #ifdef __cplusplus

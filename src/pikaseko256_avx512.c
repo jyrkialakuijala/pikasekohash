@@ -136,39 +136,55 @@ static void LoadConsts(Consts* cs) {
   for (int n = 0; n < 4; n++) cs->c[n] = _mm512_loadu_si512((const void*)kPikasekoStepConst[n]);
 }
 
-void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
-  const uint8_t* p = (const uint8_t*)data;
-  Consts cs; LoadConsts(&cs);
-  V r[16];
-  Init(r, key);
-  size_t full = len / 64;
-  const size_t rem = len % 64;
-  // Bulk: four groups of four packets, twelve steps, phases 0, 3, 2, 1.
-  for (; full >= 16; full -= 16, p += 1024) {
+// Absorbs one group of four full packets at p, at step index t (any phase).
+INL void AbsorbAt(V r[16], unsigned t, const uint8_t* p, const Consts* cs) {
+  V P[4] = {Load(p), Load(p + 64), Load(p + 128), Load(p + 192)};
+  switch (t & 3) {
+    case 0: Absorb(r, 0, P, 4, cs); break;
+    case 1: Absorb(r, 1, P, 4, cs); break;
+    case 2: Absorb(r, 2, P, 4, cs); break;
+    default: Absorb(r, 3, P, 4, cs); break;
+  }
+}
+
+// Absorbs ngroups groups of four full packets (256 bytes each) from p, starting at step
+// index t; returns the next step index. Groups start at phases 0, 3, 2, 1 in turn; from
+// phase 0 the bulk loop takes sixteen packets (twelve steps) per iteration. (The one-shot
+// function starts at t = 0; only streaming needs the alignment loop.)
+INL unsigned AbsorbGroups(V r[16], unsigned t, const uint8_t* p, size_t ngroups, const Consts* cs) {
+  while (ngroups && (t & 3)) { AbsorbAt(r, t, p, cs); t += 3; p += 256; ngroups--; }
+  for (; ngroups >= 4; ngroups -= 4, p += 1024, t += 12) {
     V P[4];
     P[0] = Load(p); P[1] = Load(p + 64); P[2] = Load(p + 128); P[3] = Load(p + 192);
-    Absorb(r, 0, P, 4, &cs);
+    Absorb(r, 0, P, 4, cs);
     P[0] = Load(p + 256); P[1] = Load(p + 320); P[2] = Load(p + 384); P[3] = Load(p + 448);
-    Absorb(r, 3, P, 4, &cs);
+    Absorb(r, 3, P, 4, cs);
     P[0] = Load(p + 512); P[1] = Load(p + 576); P[2] = Load(p + 640); P[3] = Load(p + 704);
-    Absorb(r, 2, P, 4, &cs);
+    Absorb(r, 2, P, 4, cs);
     P[0] = Load(p + 768); P[1] = Load(p + 832); P[2] = Load(p + 896); P[3] = Load(p + 960);
-    Absorb(r, 1, P, 4, &cs);
+    Absorb(r, 1, P, 4, cs);
   }
-  // 0..3 more groups of four full packets: phases 0, 3, 2.
-  int groups = 0;
-  if (full >= 4) {
+  // 0..3 more groups: phases 0, 3, 2.
+  if (ngroups) {
     V P[4] = {Load(p), Load(p + 64), Load(p + 128), Load(p + 192)};
-    Absorb(r, 0, P, 4, &cs); p += 256; full -= 4; groups = 1;
-    if (full >= 4) {
-      V Q[4] = {Load(p), Load(p + 64), Load(p + 128), Load(p + 192)};
-      Absorb(r, 3, Q, 4, &cs); p += 256; full -= 4; groups = 2;
-      if (full >= 4) {
-        V U[4] = {Load(p), Load(p + 64), Load(p + 128), Load(p + 192)};
-        Absorb(r, 2, U, 4, &cs); p += 256; full -= 4; groups = 3;
+    Absorb(r, 0, P, 4, cs);
+    if (ngroups > 1) {
+      V Q[4] = {Load(p + 256), Load(p + 320), Load(p + 384), Load(p + 448)};
+      Absorb(r, 3, Q, 4, cs);
+      if (ngroups > 2) {
+        V U[4] = {Load(p + 512), Load(p + 576), Load(p + 640), Load(p + 704)};
+        Absorb(r, 2, U, 4, cs);
       }
     }
+    t += 3 * (unsigned)ngroups;
   }
+  return t;
+}
+
+// The last n (0..255) message bytes at p, the padding, the six final steps and the fold.
+// t is the next step index, len the length of the whole message.
+INL void Finish(V r[16], unsigned t, const uint8_t* p, size_t n, uint64_t len, const Consts* cs, uint64_t out[4]) {
+  const size_t full = n / 64, rem = n % 64;
   // 0..3 full packets, then the padding packet(s): 0x80, zeros, length in lane 7.
   // Built with masked loads and blends (masked-off lanes are never read, so nothing
   // past the end of the input is touched).
@@ -188,13 +204,72 @@ void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t o
     P[k] = x;
   }
   const int np = (int)full + 1 + two;
-  switch (groups) {  // phase of the next step: 3 * groups mod 4
-    case 0: Tail(r, 0, P, np, &cs); break;
-    case 1: Tail(r, 3, P, np, &cs); break;
-    case 2: Tail(r, 2, P, np, &cs); break;
-    default: Tail(r, 1, P, np, &cs); break;
+  switch (t & 3) {
+    case 0: Tail(r, 0, P, np, cs); break;
+    case 1: Tail(r, 1, P, np, cs); break;
+    case 2: Tail(r, 2, P, np, cs); break;
+    default: Tail(r, 3, P, np, cs); break;
   }
   _mm256_storeu_si256((__m256i*)out, _mm512_castsi512_si256(Fold(r)));
+}
+
+void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
+  const uint8_t* p = (const uint8_t*)data;
+  Consts cs; LoadConsts(&cs);
+  V r[16];
+  Init(r, key);
+  const unsigned t = AbsorbGroups(r, 0, p, len / 256, &cs);
+  Finish(r, t, p + (len & ~(size_t)255), len % 256, len, &cs, out);
+}
+
+// Streaming. The context holds the state in normal form (word 8i + l = lane l of r_i), the
+// next step index and the bytes of the current, incomplete group of four packets. A
+// complete group is absorbed at once, as in the one-shot function.
+INL void LoadState(V r[16], const pikaseko256_ctx* ctx) {
+  for (int i = 0; i < 16; i++) r[i] = _mm512_loadu_si512((const void*)(ctx->r + 8 * i));
+}
+INL void StoreState(pikaseko256_ctx* ctx, const V r[16]) {
+  for (int i = 0; i < 16; i++) _mm512_storeu_si512((void*)(ctx->r + 8 * i), r[i]);
+}
+
+void pikaseko256_init(pikaseko256_ctx* ctx, const uint64_t key[8]) {
+  V r[16];
+  Init(r, key);
+  StoreState(ctx, r);
+  ctx->len = 0; ctx->t = 0; ctx->nbuf = 0;
+}
+
+void pikaseko256_update(pikaseko256_ctx* ctx, const void* data, size_t len) {
+  const uint8_t* p = (const uint8_t*)data;
+  ctx->len += len;
+  if (len < 256 - (size_t)ctx->nbuf) {
+    if (len) memcpy(ctx->buf + ctx->nbuf, p, len);
+    ctx->nbuf += (unsigned)len;
+    return;
+  }
+  Consts cs; LoadConsts(&cs);
+  V r[16];
+  LoadState(r, ctx);
+  unsigned t = ctx->t;
+  if (ctx->nbuf) {
+    const size_t take = 256 - ctx->nbuf;
+    memcpy(ctx->buf + ctx->nbuf, p, take);
+    t = AbsorbGroups(r, t, ctx->buf, 1, &cs);
+    p += take; len -= take; ctx->nbuf = 0;
+  }
+  t = AbsorbGroups(r, t, p, len / 256, &cs);
+  p += len & ~(size_t)255;
+  ctx->nbuf = (unsigned)(len % 256);
+  if (ctx->nbuf) memcpy(ctx->buf, p, ctx->nbuf);
+  ctx->t = t;
+  StoreState(ctx, r);
+}
+
+void pikaseko256_final(const pikaseko256_ctx* ctx, uint64_t out[4]) {
+  Consts cs; LoadConsts(&cs);
+  V r[16];
+  LoadState(r, ctx);
+  Finish(r, ctx->t, ctx->buf, ctx->nbuf, ctx->len, &cs, out);
 }
 
 void pikaseko256_unkeyed(const void* data, size_t len, uint64_t out[4]) {
