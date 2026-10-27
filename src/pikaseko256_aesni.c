@@ -7,6 +7,9 @@
 typedef __m128i S;
 #define W 4
 #define SXor _mm_xor_si128
+#define SOr _mm_or_si128
+#define SShl(x, n) _mm_sll_epi64((x), _mm_cvtsi32_si128(n))
+#define SShr(x, n) _mm_srl_epi64((x), _mm_cvtsi32_si128(n))
 #define SAdd _mm_add_epi64
 #define SAes _mm_aesenc_si128
 #define SMul _mm_mul_epu32

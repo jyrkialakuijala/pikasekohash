@@ -9,6 +9,9 @@
 typedef uint64x2_t S;
 #define W 4
 #define SXor veorq_u64
+#define SOr vorrq_u64
+#define SShl(x, n) vshlq_u64((x), vdupq_n_s64(n))
+#define SShr(x, n) vshlq_u64((x), vdupq_n_s64(-(n)))  // USHL by -64 gives zero
 #define SAdd vaddq_u64
 #include "pikaseko256_compiler.h"
 INL uint64x2_t SAes(uint64x2_t x, uint64x2_t k) {

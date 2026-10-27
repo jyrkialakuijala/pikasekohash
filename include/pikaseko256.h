@@ -40,9 +40,9 @@ uint64_t pikaseko64(const void* data, size_t len, const uint64_t key[8]);  // la
 // context (more data can still be added). The context holds the state in normal form and
 // is the same for every implementation, so a hash can be continued with any of them.
 typedef struct {
-  uint64_t r[128];  // state: word 8i + l is lane l of register r_i
+  uint64_t r[128];  // state after step t: word 8i + l is lane l of register r_i
   uint64_t len;     // message bytes so far
-  unsigned t;       // next step index
+  unsigned t;       // step index at which the next group of four packets is absorbed
   unsigned nbuf;    // bytes in buf (0..255): the incomplete group of four packets
   uint8_t buf[256];
 } pikaseko256_ctx;

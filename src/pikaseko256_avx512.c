@@ -51,9 +51,14 @@ INL void StepAny(V r[16], unsigned t, const Consts* cs) {
   }
 }
 
-// Absorption of np packets (np compile-time 1..4) starting at phase p.
+// The state is kept one step ahead: an absorption at step index t starts from the state
+// after step t (which the previous absorption, or the initialization, already ran) and ends
+// with step t + 3, the first step of the next absorption or the first final step. This is
+// the order of SPEC.md regrouped; the streaming context holds this state for every
+// implementation.
+
+// Absorption of np packets (np compile-time 1..4) at phase p = t mod 4.
 INL void Absorb(V r[16], const int p, const V* P, const int np, const Consts* cs) {
-  Step(r, p, cs);
   if (np > 0) r[0] = Add(r[0], P[0]);
   if (np > 1) r[5] = Add(r[5], P[1]);
   if (np > 2) r[10] = Add(r[10], P[2]);
@@ -69,38 +74,40 @@ INL void Absorb(V r[16], const int p, const V* P, const int np, const Consts* cs
   if (np > 1) r[6] = Xor(r[6], q1);
   if (np > 2) r[9] = Xor(r[9], q2);
   if (np > 3) r[12] = Xor(r[12], q3);
+  Step(r, (p + 3) & 3, cs);
 }
 
 // Absorption of the last group: np (1..4) packets known only at run time. Missing
 // packets are zero and their products are masked off, which equals absorbing np packets.
 INL void AbsorbMasked(V r[16], const int p, const V* P, const V* m, const Consts* cs) {
-  Step(r, p, cs);
   r[0] = Add(r[0], P[0]); r[5] = Add(r[5], P[1]); r[10] = Add(r[10], P[2]); r[15] = Add(r[15], P[3]);
   Step(r, (p + 1) & 3, cs);
   const V q0 = _mm512_mul_epu32(r[1], r[0]), q1 = _mm512_and_si512(_mm512_mul_epu32(r[4], r[5]), m[1]);
   const V q2 = _mm512_and_si512(_mm512_mul_epu32(r[11], r[10]), m[2]), q3 = _mm512_and_si512(_mm512_mul_epu32(r[14], r[15]), m[3]);
   Step(r, (p + 2) & 3, cs);
   r[3] = Xor(r[3], q0); r[6] = Xor(r[6], q1); r[9] = Xor(r[9], q2); r[12] = Xor(r[12], q3);
+  Step(r, (p + 3) & 3, cs);
 }
 
+// Final steps 2..6 (the first ran at the end of the last absorption), from phase p.
 INL void Finals(V r[16], const int p, const Consts* cs) {
   Step(r, p, cs); Step(r, (p + 1) & 3, cs); Step(r, (p + 2) & 3, cs);
-  Step(r, (p + 3) & 3, cs); Step(r, p, cs); Step(r, (p + 1) & 3, cs);
+  Step(r, (p + 3) & 3, cs); Step(r, p, cs);
 }
 
 // The last one or two groups (np = 1..5 packets in P[0..7], unused ones zero) and the
-// six final steps, starting at phase p.
+// final steps, the first group at phase p.
 INL void Tail(V r[16], const int p, const V* P, int np, const Consts* cs) {
   const V ones = _mm512_set1_epi64(-1), zero = _mm512_setzero_si512();
   V m[4] = {ones, np > 1 ? ones : zero, np > 2 ? ones : zero, np > 3 ? ones : zero};
   if (np <= 4) {
     AbsorbMasked(r, p, P, m, cs);
-    Finals(r, (p + 3) & 3, cs);
+    Finals(r, p, cs);
   } else {
     AbsorbMasked(r, p, P, m, cs);
     m[1] = m[2] = m[3] = zero;
     AbsorbMasked(r, (p + 3) & 3, P + 4, m, cs);
-    Finals(r, (p + 2) & 3, cs);
+    Finals(r, (p + 3) & 3, cs);
   }
 }
 
@@ -130,6 +137,14 @@ INL V Fold(V r[16]) {
   V s = Aes(Add(a0, a1), Add(r[1], r[2]));
   s = Aes(s, Rot1(Add(r[3], r[4])));
   return Add(s, Rot2(s));
+}
+
+// The state after step 0. (The unkeyed state after step 0 is a constant, but loading it
+// instead, as the other implementations do, made gcc spill the state registers here and
+// was slower; out-of-order execution already overlaps step 0 with the caller.)
+INL void Start(V r[16], const uint64_t key[8], const Consts* cs) {
+  Init(r, key);
+  Step(r, 0, cs);
 }
 
 static void LoadConsts(Consts* cs) {
@@ -217,13 +232,14 @@ void pikaseko256_avx512(const void* data, size_t len, const uint64_t key[8], uin
   const uint8_t* p = (const uint8_t*)data;
   Consts cs; LoadConsts(&cs);
   V r[16];
-  Init(r, key);
+  Start(r, key, &cs);
   const unsigned t = AbsorbGroups(r, 0, p, len / 256, &cs);
   Finish(r, t, p + (len & ~(size_t)255), len % 256, len, &cs, out);
 }
 
-// Streaming. The context holds the state in normal form (word 8i + l = lane l of r_i), the
-// next step index and the bytes of the current, incomplete group of four packets. A
+// Streaming. The context holds the state in normal form (word 8i + l = lane l of r_i) after
+// step t, the step index t at which the next absorption starts, and the bytes of the
+// current, incomplete group of four packets. A
 // complete group is absorbed at once, as in the one-shot function.
 INL void LoadState(V r[16], const pikaseko256_ctx* ctx) {
   for (int i = 0; i < 16; i++) r[i] = _mm512_loadu_si512((const void*)(ctx->r + 8 * i));
@@ -233,8 +249,9 @@ INL void StoreState(pikaseko256_ctx* ctx, const V r[16]) {
 }
 
 void pikaseko256_init_avx512(pikaseko256_ctx* ctx, const uint64_t key[8]) {
+  Consts cs; LoadConsts(&cs);
   V r[16];
-  Init(r, key);
+  Start(r, key, &cs);
   StoreState(ctx, r);
   ctx->len = 0; ctx->t = 0; ctx->nbuf = 0;
 }

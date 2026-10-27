@@ -458,7 +458,7 @@ same results. It uses a bitsliced AES: each 512-bit register is held as
 eight 64-bit bit planes, the S-box is the Boyar-Peralta circuit [14] applied
 to all 64 bytes of a register at once, and ShiftRows, MixColumns and the
 block rotations are fixed shifts and masks. It has no tables and no
-data-dependent branches, indices or shift amounts. It takes about 6 µs per
+data-dependent branches, indices or shift amounts. It takes about 5.4 µs per
 short message and runs at about 118 MB/s in bulk, roughly 200 times slower
 than the AVX-512 code.
 

@@ -22,6 +22,7 @@
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
 #include "pikaseko256_consts.h"
+#include "pikaseko256_step0.h"
 
 typedef struct { uint64_t l[8]; } Reg;    // a 512-bit register in normal form: 8 lanes
 typedef struct { uint64_t p[8]; } Slice;  // the same register bitsliced: 8 planes
@@ -243,16 +244,23 @@ static void Step(Slice r[16], unsigned t, const Slice cs[4]) {
 
 static const int kFeed[4] = {0, 5, 10, 15}, kMult[4] = {1, 4, 11, 14}, kTarget[4] = {3, 6, 9, 12};
 
-// Absorb np (1..4) packets starting at step t; returns the next step index. The additions
-// and products need the normal form; the xor of q is the same in either form.
+// The state is kept one step ahead: an absorption at step index t starts from the state
+// after step t (run by the previous absorption or the initialization) and ends with step
+// t + 3, the first step of the next absorption or the first final step. This is the order
+// of SPEC.md regrouped; it lets the unkeyed hash start from the precomputed state after
+// step 0, and it is the state the streaming context holds.
+//
+// Absorb np (1..4) packets at step t; returns t + 3. The additions and products need the
+// normal form; the xor of q is the same in either form.
 static unsigned Absorb(Slice r[16], unsigned t, const Reg* P, int np, const Slice cs[4]) {
-  Step(r, t++, cs);
+  t++;
   for (int k = 0; k < np; k++) r[kFeed[k]] = ToSlice(Add(FromSlice(r[kFeed[k]]), P[k]));
   Step(r, t++, cs);
   Slice q[4];
   for (int k = 0; k < np; k++) q[k] = ToSlice(Mul32(FromSlice(r[kMult[k]]), FromSlice(r[kFeed[k]])));
   Step(r, t++, cs);
   for (int k = 0; k < np; k++) r[kTarget[k]] = XorS(r[kTarget[k]], q[k]);
+  Step(r, t, cs);
   return t;
 }
 
@@ -305,7 +313,7 @@ static void Finish(Slice r[16], unsigned t, const uint8_t* m, size_t n, uint64_t
     }
     t = Absorb(r, t, P, np, cs);
   }
-  for (int f = 0; f < PIKASEKO_FINAL_STEPS; f++) Step(r, t++, cs);
+  for (int f = 1; f < PIKASEKO_FINAL_STEPS; f++) Step(r, ++t, cs);  // the first ran in Absorb
   // Fold: a = sum of the registers, two AES rounds keyed by r1 + r2 and rot1(r3 + r4),
   // then lanes 0..3 of s + rot2(s).
   Reg x[16];
@@ -317,17 +325,31 @@ static void Finish(Slice r[16], unsigned t, const uint8_t* m, size_t n, uint64_t
   for (int l = 0; l < 4; l++) out[l] = s.l[l] + s.l[l + 4];
 }
 
+// The state after step 0: computed for a key, the precomputed one for the unkeyed hash.
+static void Start(Slice r[16], const uint64_t key[8], const Slice cs[4]) {
+  if (key) {  // depends on the pointer only, never on the key value
+    Init(r, key);
+    Step(r, 0, cs);
+  } else {
+    for (int i = 0; i < 16; i++) {
+      Reg x;
+      memcpy(x.l, kPikasekoUnkeyedStep0 + 8 * i, 64);
+      r[i] = ToSlice(x);
+    }
+  }
+}
+
 void pikaseko256_portable(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]) {
   const uint8_t* m = (const uint8_t*)data;
   Slice cs[4];
   SliceConsts(cs);
   Slice r[16];
-  Init(r, key);
+  Start(r, key, cs);
   const unsigned t = AbsorbGroups(r, 0, m, len / 256, cs);
   Finish(r, t, m + (len - len % 256), len % 256, len, cs, out);
 }
 
-// Streaming (see pikaseko256.h): the context keeps the state in normal form.
+// Streaming (see pikaseko256.h): the context keeps the state after step ctx->t, in normal form.
 static void LoadState(Slice r[16], const pikaseko256_ctx* ctx) {
   for (int i = 0; i < 16; i++) {
     Reg x;
@@ -343,8 +365,10 @@ static void StoreState(pikaseko256_ctx* ctx, const Slice r[16]) {
 }
 
 void pikaseko256_init_portable(pikaseko256_ctx* ctx, const uint64_t key[8]) {
+  Slice cs[4];
+  SliceConsts(cs);
   Slice r[16];
-  Init(r, key);
+  Start(r, key, cs);
   StoreState(ctx, r);
   ctx->len = 0; ctx->t = 0; ctx->nbuf = 0;
 }

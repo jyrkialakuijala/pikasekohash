@@ -23,6 +23,7 @@
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
 #include "pikaseko256_impl.h"
+#include "pikaseko256_step0.h"
 
 #if defined(PIKASEKO256_HAVE_X86) || defined(PIKASEKO256_HAVE_NEON)
 #define HAVE_SIMD 1
@@ -395,6 +396,17 @@ int main(void) {
 #ifdef HAVE_MMAP
   fails += GuardPages();
 #endif
+  // The precomputed unkeyed state after step 0 is the zero-key IV after one step.
+  {
+    static const uint32_t kPi = 0x243F6A88u, kE = 0xB7E15162u, kPhi = 0x9E3779B9u;
+    uint64_t st[128];
+    for (int i = 0; i < 16; i++)
+      for (int l = 0; l < 8; l++) st[8 * i + l] = (uint64_t)(uint32_t)(kPhi + (uint32_t)i * kPi) * (uint32_t)(kPhi + (uint32_t)l * kE);
+    pikaseko256_steps_portable(st, 0, 1);
+    const int ok = !memcmp(st, kPikasekoUnkeyedStep0, sizeof st);
+    printf("precomputed unkeyed step 0: %s\n", ok ? "ok" : "FAIL");
+    fails += !ok;
+  }
   fails += StepsPortableConsistency();
   if (!avx) printf("(AVX-512 tests were skipped)\n");
   printf("%s\n", fails ? "SOME TESTS FAILED" : "ALL OK");

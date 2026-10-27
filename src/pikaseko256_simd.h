@@ -4,7 +4,8 @@
 // register is two 256-bit vectors), the AES-NI build and the ARMv8 build (four 128-bit
 // vectors, one per AES block). The includer defines
 //   S               the vector type, W the number of vectors per register (2 or 4)
-//   SXor SAdd SAes SMul SLoad SStore   lane-wise operations (64-bit lanes, AES per block)
+//   SXor SOr SAdd SAes SMul SLoad SStore   lane-wise operations (64-bit lanes, AES per block)
+//   SShl(x, n) SShr(x, n)   64-bit lane shifts by a run-time count 0..64 (64 gives zero)
 //   ROT1(x) ROT2(x) the block rotations on a register (R)
 //   SUFFIX          the name suffix of the exported functions
 //   UNROLL_FINALS   1: the final steps with compile-time phases (faster for AVX2, slower
@@ -19,6 +20,7 @@
 #include "pikaseko256_analysis.h"
 #include "pikaseko256_compiler.h"
 #include "pikaseko256_consts.h"
+#include "pikaseko256_step0.h"
 #include "pikaseko256_impl.h"
 
 #define CAT2(a, b) a##b
@@ -32,6 +34,8 @@ INL R Xor(R a, R b) { R r; UNROLL_W for (int i = 0; i < W; i++) r.v[i] = SXor(a.
 INL R Add(R a, R b) { R r; UNROLL_W for (int i = 0; i < W; i++) r.v[i] = SAdd(a.v[i], b.v[i]); return r; }
 INL R Aes(R a, R k) { R r; UNROLL_W for (int i = 0; i < W; i++) r.v[i] = SAes(a.v[i], k.v[i]); return r; }
 INL R Mul(R a, R b) { R r; UNROLL_W for (int i = 0; i < W; i++) r.v[i] = SMul(a.v[i], b.v[i]); return r; }
+// Lane-wise rotation left by n (0..63): a shift by 64 gives zero on every target.
+INL R Rotl(R a, int n) { R r; UNROLL_W for (int i = 0; i < W; i++) r.v[i] = SOr(SShl(a.v[i], n), SShr(a.v[i], 64 - n)); return r; }
 INL R Load(const void* p) { R r; UNROLL_W for (int i = 0; i < W; i++) r.v[i] = SLoad((const uint8_t*)p + (64 / W) * i); return r; }
 INL void Store(void* p, R x) { UNROLL_W for (int i = 0; i < W; i++) SStore((uint8_t*)p + (64 / W) * i, x.v[i]); }
 
@@ -67,9 +71,11 @@ INL void StepAny(R r[16], unsigned t, const Consts* cs) {
   }
 }
 
-// Absorption of np (1..4) packets at phase p. np depends on the length only.
+// As in pikaseko256_avx512.c, the state is kept one step ahead: an absorption at step index
+// t starts after step t and ends with step t + 3.
+
+// Absorption of np (1..4) packets at phase p = t mod 4. np depends on the length only.
 INL void Absorb(R r[16], const int p, const R* P, const int np, const Consts* cs) {
-  Step(r, p, cs);
   r[0] = Add(r[0], P[0]);
   if (np > 1) r[5] = Add(r[5], P[1]);
   if (np > 2) r[10] = Add(r[10], P[2]);
@@ -84,6 +90,7 @@ INL void Absorb(R r[16], const int p, const R* P, const int np, const Consts* cs
   if (np > 1) r[6] = Xor(r[6], q1);
   if (np > 2) r[9] = Xor(r[9], q2);
   if (np > 3) r[12] = Xor(r[12], q3);
+  Step(r, (p + 3) & 3, cs);
 }
 
 INL void AbsorbAny(R r[16], unsigned t, const R* P, int np, const Consts* cs) {
@@ -95,9 +102,10 @@ INL void AbsorbAny(R r[16], unsigned t, const R* P, int np, const Consts* cs) {
   }
 }
 
+// Final steps 2..6 (the first ran at the end of the last absorption), from phase p.
 INL void Finals(R r[16], const int p, const Consts* cs) {
   Step(r, p, cs); Step(r, (p + 1) & 3, cs); Step(r, (p + 2) & 3, cs);
-  Step(r, (p + 3) & 3, cs); Step(r, p, cs); Step(r, (p + 1) & 3, cs);
+  Step(r, (p + 3) & 3, cs); Step(r, p, cs);
 }
 
 // Absorbs ngroups groups of four full packets from p, starting at step index t; returns
@@ -144,15 +152,16 @@ static void Finish(R r[16], unsigned t, const uint8_t* m, size_t n, uint64_t len
     AbsorbAny(r, t, P, 1, cs);
     t += 3;
   }
+  // t: the first final step, already run. The other five:
 #if UNROLL_FINALS
-  switch (t & 3) {  // the six final steps, with compile-time phases
+  switch ((t + 1) & 3) {  // with compile-time phases
     case 0: Finals(r, 0, cs); break;
     case 1: Finals(r, 1, cs); break;
     case 2: Finals(r, 2, cs); break;
     default: Finals(r, 3, cs); break;
   }
 #else
-  for (int f = 0; f < PIKASEKO_FINAL_STEPS; f++, t++) StepAny(r, t, cs);  // smaller code
+  for (int f = 1; f < PIKASEKO_FINAL_STEPS; f++) StepAny(r, ++t, cs);  // smaller code
 #endif
   R a = r[0];
   for (int i = 1; i < 16; i++) a = Add(a, r[i]);
@@ -177,15 +186,20 @@ INL void Init(R r[16], const uint64_t key[8]) {
     r[i] = Mul(Load(av), lane);
   }
   if (key) {  // depends on the pointer only, never on the key value
-    for (int i = 0; i < 16; i++) {
-      uint64_t x[8];
-      for (int l = 0; l < 8; l++) {
-        const uint64_t y = key[(l + i) & 7];
-        const int sh = (4 * i) & 63;
-        x[l] = sh ? (y << sh) | (y >> (64 - sh)) : y;
-      }
-      r[i] = Xor(r[i], Load(x));
-    }
+    uint64_t k2[16];  // the key twice: lane l of k2 + (i mod 8) is key[(l + i) mod 8]
+    memcpy(k2, key, 64);
+    memcpy(k2 + 8, key, 64);
+    for (int i = 0; i < 16; i++) r[i] = Xor(r[i], Rotl(Load(k2 + (i & 7)), 4 * i));  // 4i < 64
+  }
+}
+
+// The state after step 0: computed for a key, loaded for the unkeyed hash.
+static void Start(R r[16], const uint64_t key[8], const Consts* cs) {
+  if (key) {  // depends on the pointer only, never on the key value
+    Init(r, key);
+    Step(r, 0, cs);
+  } else {
+    for (int i = 0; i < 16; i++) r[i] = Load(kPikasekoUnkeyedStep0 + 8 * i);
   }
 }
 
@@ -194,7 +208,7 @@ void NAME(pikaseko256)(const void* data, size_t len, const uint64_t key[8], uint
   Consts cs;
   LoadConsts(&cs);
   R r[16];
-  Init(r, key);
+  Start(r, key, &cs);
   const unsigned t = AbsorbGroups(r, 0, p, len / 256, &cs);
   Finish(r, t, p + (len - len % 256), len % 256, len, &cs, out);
 }
@@ -207,8 +221,10 @@ static void StoreState(pikaseko256_ctx* ctx, const R r[16]) {
 }
 
 void NAME(pikaseko256_init)(pikaseko256_ctx* ctx, const uint64_t key[8]) {
+  Consts cs;
+  LoadConsts(&cs);
   R r[16];
-  Init(r, key);
+  Start(r, key, &cs);
   StoreState(ctx, r);
   ctx->len = 0; ctx->t = 0; ctx->nbuf = 0;
 }

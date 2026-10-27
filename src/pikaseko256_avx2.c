@@ -7,6 +7,9 @@
 typedef __m256i S;
 #define W 2
 #define SXor _mm256_xor_si256
+#define SOr _mm256_or_si256
+#define SShl(x, n) _mm256_sll_epi64((x), _mm_cvtsi32_si128(n))
+#define SShr(x, n) _mm256_srl_epi64((x), _mm_cvtsi32_si128(n))
 #define SAdd _mm256_add_epi64
 #define SAes _mm256_aesenc_epi128
 #define SMul _mm256_mul_epu32

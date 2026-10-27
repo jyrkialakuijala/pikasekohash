@@ -116,6 +116,7 @@ battery: build/battery
 # The Python reference (ref/pikaseko256.py, from SPEC.md) against the test vectors.
 test-python:
 	python3 ref/pikaseko256.py --checksum
+	python3 tools/gen_step0.py | diff - src/pikaseko256_step0.h && echo "src/pikaseko256_step0.h reproduced"
 
 # Fuzzing (clang with libFuzzer): every implementation against the portable one, one-shot
 # and streaming, under ASan and UBSan. make fuzz FUZZTIME=60
