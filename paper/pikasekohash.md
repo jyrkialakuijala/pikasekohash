@@ -424,8 +424,8 @@ cache, gcc 15. The table measures repeated independent calls on one
 | SHA-256 (OpenSSL, SHA-NI) | 2.8 |
 
 The bulk loop takes about 14.5 cycles per 64 bytes, 24 GB/s at 1 MiB. The
-two AES pipes alone need 12 cycles (96 AES rounds on 512-bit registers per
-256 bytes at two per cycle); the shuffle-to-AES recurrence and the
+two AES pipes alone need 12 of them (96 AES rounds on 512-bit registers per
+256 bytes at two per cycle: 48 cycles per 256 bytes); the shuffle-to-AES recurrence and the
 multiplies account for the rest. Every message up to 128 bytes takes 36 ns,
 256 bytes 45 ns and 1 KiB 76 ns, measured as the latency of dependent calls;
 a key adds about 2 ns. The minimum is nine steps.

@@ -31,7 +31,8 @@ versions, and the SHA-2, BLAKE3, Keccak and Rijndael design traditions)
 examined the same absorption with the previous finalization (4 final steps
 and a linear sum fold). It found no attack on the full hash and no
 collision-type attack on a reduced version below 2^128; the collision
-characteristics found cost 201-672 active S-boxes. Its main findings were:
+characteristics found cost 438-672 active S-boxes (201 when only the last
+step of an absorption is counted). Its main findings were:
 the products can be steered in the unkeyed hash (all four forced to zero in
 milliseconds); the truncated model admits a one-step local collision of 36
 active S-boxes from the key-in-state structure (later shown infeasible, see

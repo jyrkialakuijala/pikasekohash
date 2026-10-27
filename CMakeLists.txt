@@ -6,7 +6,7 @@
 # With PIKASEKO256_AVX512=OFF the library contains only the portable code and
 # PIKASEKO256_NO_AVX512 is defined for everything that links it.
 cmake_minimum_required(VERSION 3.16)
-project(pikaseko256 VERSION 0.0.0 LANGUAGES C)
+project(pikaseko256 VERSION 0.0.1 LANGUAGES C)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)

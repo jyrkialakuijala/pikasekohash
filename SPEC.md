@@ -151,7 +151,7 @@ The feed registers, multiplicand registers and product targets are
     g = (3, 6, 9, 12)
 
 The packets are taken in order, four at a time: group number u holds packets
-P_{4u} .. P_{min(4u+3, N-1)}. The last group may hold np = 1, 2 or 3 packets;
+P_{4u} .. P_{min(4u+3, N-1)}. The last group holds np = 1, 2, 3 or 4 packets;
 all others hold np = 4. One group is absorbed as follows, where Q_0..Q_{np-1}
 are its packets:
 

@@ -6,7 +6,7 @@
 // each of the four 64-bit output words (expect 0) and for the low, middle and
 // high 32 bits of each word (expect n - 2^32 (1 - exp(-n / 2^32)),
 // z = (seen - expect) / sqrt(expect)). Avalanche, BIC and the differential
-// test cover all 256 output bits. Usage: classic [--quick]
+// test cover all 256 output bits. Usage: battery [--quick]
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

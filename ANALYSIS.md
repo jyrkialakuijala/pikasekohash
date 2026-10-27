@@ -358,8 +358,9 @@ differential and no key-independent collision (measured).
 * **Constant time.** The AVX-512 implementation has no branches and no
   memory accesses that depend on the key or the message contents; it
   branches only on the length and on whether a key pointer is given. Its
-  instructions (VAESENC, VPMULUDQ, VPXORQ, VPTERNLOGQ, VSHUFI64X2, VPADDQ,
-  masked loads) have operand-independent latency on current x86 cores
+  instructions (VAESENC, VPMULUDQ, VPXORQ, VPTERNLOGQ, VPANDQ, VSHUFI64X2,
+  VPADDQ, and for the key VPERMQ and VPROLVQ; broadcasts, masked loads and
+  masked moves) have operand-independent latency on current x86 cores
   (argued from public documentation). The portable implementation is a bitsliced
   AES (the Boyar-Peralta S-box circuit on 64-bit words, ShiftRows and
   MixColumns as fixed shifts and masks), without tables and without
@@ -396,11 +397,13 @@ differential and no key-independent collision (measured).
 5. Product timing: read the operands after step t+2 to remove unkeyed
    steering, once its statistical artefact at two final steps is understood.
 6. A fold that mixes the block halves (section 8).
-7. Bounds with bit-level models, a super-box model or a stronger solver; a
+7. An extendable output mode and a tree mode for several cores.
+8. Bounds with bit-level models, a super-box model or a stronger solver; a
    division-property bound for the output; measurements on Intel cores;
    implementations for AES-NI with AVX2 and for ARMv8 crypto extensions.
 
-Any of the changes 2, 3, 5 or 6 changes the test vectors.
+Any of the changes 2, 3, 5, 6 or 7 changes the test vectors (7 only for
+the new modes).
 
 ## 14. Review history
 

@@ -1,8 +1,9 @@
 // Copyright (c) 2026 Jyrki Alakuijala
 // SPDX-License-Identifier: MIT
-// Tests: the built-in test vectors (test/test_vectors.txt) on both implementations, the
-// AVX-512 code against the portable code over many lengths, alignments and keys, the step
-// function, and NULL key = zero key.
+// Tests: test vectors (an embedded copy of part of test/test_vectors.txt) on both
+// implementations, the AVX-512 code against the portable code for every length 0..2048 at
+// three alignments and three keys, streaming against one-shot, the step function, and
+// NULL key = zero key.
 //
 // The AVX-512 tests run only when the CPU and OS support AVX512F, AVX512BW and VAES (and
 // the library was not built with PIKASEKO256_NO_AVX512); otherwise, or when the
@@ -59,7 +60,7 @@ static long AvxVsPortable(const uint8_t* buf, const uint64_t* key18) {
     uint64_t key[8];
     for (int i = 0; i < 8; i++) key[i] = Next();
     const uint64_t* kp = kc == 0 ? NULL : kc == 1 ? key18 : key;
-    for (size_t len = 0; len <= 2048; len += len < 300 ? 1 : 7)
+    for (size_t len = 0; len <= 2048; len++)
       for (int al = 0; al < 3; al++) {
         const uint8_t* d = buf + (al == 0 ? 0 : al == 1 ? 1 : 37);
         uint64_t a[4], p[4];
