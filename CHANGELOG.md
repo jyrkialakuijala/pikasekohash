@@ -25,6 +25,8 @@ changes the output of the function changes the test vectors.
   dispatch when the CPU has the AES extension. The build flag for portable-only
   builds is now `PIKASEKO256_PORTABLE_ONLY` (the old `PIKASEKO256_NO_AVX512` is
   still accepted); the CMake option is `PIKASEKO256_SIMD`.
+* MSVC: the sources, benchmarks and tools build with MSVC (CMake), with the
+  x86 implementations; Windows CI job.
 * `pikaseko256_key_from_bytes` and `pikaseko256_digest_to_bytes`: byte forms
   of the key and the digest, independent of the host byte order.
 

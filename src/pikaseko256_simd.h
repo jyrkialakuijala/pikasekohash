@@ -17,14 +17,14 @@
 
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
+#include "pikaseko256_compiler.h"
 #include "pikaseko256_consts.h"
 #include "pikaseko256_impl.h"
 
-#define INL static inline __attribute__((always_inline))
 #define CAT2(a, b) a##b
 #define CAT(a, b) CAT2(a, b)
 #define NAME(x) CAT(x, SUFFIX)
-#define UNROLL_W _Pragma("GCC unroll 4")
+#define UNROLL_W PIKASEKO_UNROLL(4)
 
 typedef struct { S v[W]; } R;  // one 512-bit register
 
@@ -44,7 +44,7 @@ static void LoadConsts(Consts* cs) {
 // One step with phase p = t mod 4 (a compile-time constant at every call site).
 INL void Step(R r[16], const int p, const Consts* cs) {
   const int s = 1 << p, c = (s == 8) ? 1 : 2 * s;
-#pragma GCC unroll 16
+PIKASEKO_UNROLL(16)
   for (int i = 0; i < 16; i++) {
     if (i & (s | c)) continue;
     const int j = i ^ s, i2 = i ^ c, j2 = i ^ c ^ s;

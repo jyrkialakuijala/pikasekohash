@@ -17,6 +17,11 @@
 #define OB 256  // output bits
 typedef struct { uint64_t w[4]; } H256;
 static inline H256 H(const void* p, size_t n, const uint64_t* key) { H256 h; pikaseko256(p, n, key, h.w); return h; }
+#if defined(__GNUC__) || defined(__clang__)
+static inline int Popcount64(uint64_t x) { return __builtin_popcountll(x); }
+#else
+static inline int Popcount64(uint64_t x) { int c = 0; for (; x; x &= x - 1) c++; return c; }
+#endif
 static inline H256 Xor(H256 a, H256 b) { H256 r; for (int i = 0; i < 4; i++) r.w[i] = a.w[i] ^ b.w[i]; return r; }
 static inline int Bit(H256 h, int o) { return (h.w[o >> 6] >> (o & 63)) & 1; }
 static inline int IsZero(H256 h) { return (h.w[0] | h.w[1] | h.w[2] | h.w[3]) == 0; }
@@ -103,7 +108,7 @@ static void BIC(size_t len, int trials) {
       for (int o = 0; o < OB; ++o) if (Bit(d, o)) cols[(size_t)o * words + t / 64] |= 1ull << (t % 64);
     }
     for (int j = 0; j < OB; ++j) for (int k = j + 1; k < OB; ++k) {
-      int c = 0; for (int w = 0; w < words; ++w) c += __builtin_popcountll(cols[(size_t)j * words + w] ^ cols[(size_t)k * words + w]);
+      int c = 0; for (int w = 0; w < words; ++w) c += Popcount64(cols[(size_t)j * words + w] ^ cols[(size_t)k * words + w]);
       const double corr = fabs(2.0 * c / trials - 1.0);
       if (corr > worst) { worst = corr; wi = b; wj = j; wk = k; }
     }

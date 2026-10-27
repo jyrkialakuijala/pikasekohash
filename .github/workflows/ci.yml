@@ -99,6 +99,23 @@ jobs:
           cmake --build build/cmake -j "$(nproc)"
           ctest --test-dir build/cmake --output-on-failure
 
+  windows:
+    name: Windows MSVC
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: CMake + ctest (x86 implementations and portable)
+        run: |
+          cmake -S . -B build/msvc -A x64
+          cmake --build build/msvc --config Release
+          ctest --test-dir build/msvc -C Release --output-on-failure
+      - name: CMake + ctest, PIKASEKO256_SIMD=OFF
+        run: |
+          cmake -S . -B build/msvc-portable -A x64 -DPIKASEKO256_SIMD=OFF
+          cmake --build build/msvc-portable --config Release
+          ctest --test-dir build/msvc-portable -C Release --output-on-failure
+
   s390x:
     name: s390x big-endian portable (qemu)
     runs-on: ubuntu-latest

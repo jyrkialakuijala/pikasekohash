@@ -6,7 +6,7 @@ execute_process(COMMAND ${EMULATOR} ${PROGRAM} OUTPUT_FILE ${OUTPUT} RESULT_VARI
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "${PROGRAM} exited with ${rc}")
 endif()
-execute_process(COMMAND ${CMAKE_COMMAND} -E compare_files ${OUTPUT} ${EXPECTED} RESULT_VARIABLE diff)
+execute_process(COMMAND ${CMAKE_COMMAND} -E compare_files --ignore-eol ${OUTPUT} ${EXPECTED} RESULT_VARIABLE diff)
 if(NOT diff EQUAL 0)
   message(FATAL_ERROR "${OUTPUT} differs from ${EXPECTED}")
 endif()

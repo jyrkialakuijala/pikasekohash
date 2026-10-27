@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Jyrki Alakuijala
 // SPDX-License-Identifier: MIT
 // Speed of the portable implementation, pikaseko256_portable (unkeyed and keyed).
-// Plain C (POSIX clock_gettime), so it runs on any platform. Results are only
+// Plain C (clock_gettime, or C11 timespec_get on Windows), so it runs on any platform. Results are only
 // meaningful on an idle machine with a fixed clock.
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
@@ -11,7 +11,14 @@
 
 #include "pikaseko256.h"
 
-static double Now(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + 1e-9 * ts.tv_nsec; }
+static double Now(void) {
+#if defined(_WIN32)
+  struct timespec ts; timespec_get(&ts, TIME_UTC);
+#else
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+#endif
+  return (double)ts.tv_sec + 1e-9 * (double)ts.tv_nsec;
+}
 
 int main(int argc, char** argv) {
   const int keyed = argc > 1 && !strcmp(argv[1], "--keyed");

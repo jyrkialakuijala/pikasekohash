@@ -43,7 +43,7 @@ is welcome; see [SECURITY.md](SECURITY.md).
 
 ## Requirements
 
-* A C11 compiler (gcc or clang) and `make`.
+* A C11 compiler (gcc, clang, or MSVC through CMake) and `make` or CMake.
 * For the fast implementations: a compiler that supports
   `-mavx512f -mavx512bw -mvaes -mavx2 -maes`. The library checks the CPU at
   run time and uses the fastest implementation it supports: AVX-512 + VAES,

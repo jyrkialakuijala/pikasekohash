@@ -7,12 +7,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else
 #include <x86intrin.h>
+#endif
 
 #include "pikaseko256.h"
 #include "pikaseko256_impl.h"
 
-static double Now(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + 1e-9 * ts.tv_nsec; }
+static double Now(void) {
+#if defined(_WIN32)
+  struct timespec ts; timespec_get(&ts, TIME_UTC);
+#else
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+#endif
+  return (double)ts.tv_sec + 1e-9 * (double)ts.tv_nsec;
+}
 
 // Usage: bench [--keyed] [--impl avx512|avx2|aesni|portable] (default: the dispatching function)
 int main(int argc, char** argv) {
@@ -34,7 +45,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   const size_t sizes[] = {8, 32, 64, 128, 256, 1024, 4096, 16384, 65536, 1 << 20};
-  uint8_t* buf = (uint8_t*)aligned_alloc(64, 1 << 20);
+  uint8_t* raw = (uint8_t*)malloc((1 << 20) + 64);
+  if (!raw) return 1;
+  uint8_t* buf = raw + (64 - (uintptr_t)raw % 64);  // 64-byte aligned
   for (size_t i = 0; i < (1 << 20); i++) buf[i] = (uint8_t)(i * 131 + 7);
   const uint64_t key[8] = {1, 2, 3, 4, 5, 6, 7, 8};
   uint64_t sink = 0, out[4];

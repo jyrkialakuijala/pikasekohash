@@ -12,10 +12,10 @@
 
 #include "pikaseko256.h"
 #include "pikaseko256_analysis.h"
+#include "pikaseko256_compiler.h"
 #include "pikaseko256_consts.h"
 
 typedef __m512i V;
-#define INL static inline __attribute__((always_inline))
 
 INL V Xor(V a, V b) { return _mm512_xor_si512(a, b); }
 INL V Add(V a, V b) { return _mm512_add_epi64(a, b); }
@@ -28,7 +28,7 @@ typedef struct { V c[4]; } Consts;  // step constants
 // One step with phase p = t mod 4 (a compile-time constant at every call site).
 INL void Step(V r[16], const int p, const Consts* cs) {
   const int s = 1 << p, c = (s == 8) ? 1 : 2 * s;
-#pragma GCC unroll 16
+PIKASEKO_UNROLL(16)
   for (int i = 0; i < 16; i++) {
     if (i & (s | c)) continue;
     const int j = i ^ s, i2 = i ^ c, j2 = i ^ c ^ s;
@@ -111,11 +111,11 @@ INL void Init(V r[16], const uint64_t key[8]) {
   // phi + l e (mod 2^32) in the low half of lane l
   const V bl = _mm512_and_si512(_mm512_add_epi64(_mm512_set1_epi64(PIKASEKO_PHI),
                    _mm512_mul_epu32(lane, _mm512_set1_epi64(PIKASEKO_E))), _mm512_set1_epi64(0xffffffff));
-#pragma GCC unroll 16
+PIKASEKO_UNROLL(16)
   for (int i = 0; i < 16; i++) r[i] = _mm512_mul_epu32(_mm512_set1_epi64(PIKASEKO_PHI + (uint32_t)i * PIKASEKO_PI), bl);
   if (key) {  // depends on the pointer only, never on the key value
     const V K = _mm512_loadu_si512((const void*)key);
-#pragma GCC unroll 16
+PIKASEKO_UNROLL(16)
     for (int i = 0; i < 16; i++) {
       // lane l: rotl64(K[(l + i) mod 8], 4i mod 64)
       const V Ki = _mm512_permutexvar_epi64(_mm512_and_si512(_mm512_add_epi64(lane, _mm512_set1_epi64(i)), _mm512_set1_epi64(7)), K);
@@ -196,7 +196,7 @@ INL void Finish(V r[16], unsigned t, const uint8_t* p, size_t n, uint64_t len, c
   if (!two) pad = _mm512_mask_mov_epi64(pad, 0x80, lenv);
   const V pad2 = _mm512_maskz_mov_epi64(0x80, lenv);
   V P[8];
-#pragma GCC unroll 8
+PIKASEKO_UNROLL(8)
   for (int k = 0; k < 8; k++) {
     V x = _mm512_maskz_loadu_epi64((size_t)k < full ? 0xff : 0, p + 64 * k);
     x = _mm512_mask_mov_epi64(x, (size_t)k == full ? 0xff : 0, pad);
