@@ -50,6 +50,19 @@ instruction mix from the start. Three choices follow.
    outputs, never raw input, which avoids the zero-multiplicand weakness of
    designs that multiply input directly [5].
 
+Building a hash from the AES round is not new. ECHO [16], a SHA-3
+candidate, kept a 2048-bit state of sixteen 128-bit words and applied two
+AES rounds to each word between word-level shifts and mixes. Haraka v2 [17]
+and Areion [19] build short-input hashes from fixed permutations of a few AES
+blocks, and Simpira v2 [18] builds permutations of any multiple of 128 bits
+from AES rounds in Feistel structures. All of these use AES rounds inside
+permutations with fixed round keys or constants, and rest on wide-trail and
+permutation-based arguments. PikasekoHash differs in two ways that cost it
+those arguments: its round keys are taken from the state (xors of other
+registers), as in the state updates of AEGIS [11] and Rocca [12], and its
+step is not a permutation (section 4.2). In exchange it uses only AES rounds,
+xors and one block shuffle per key, with no permutes between steps.
+
 The design started from HighwayHash's multiply-and-zipper-merge round and
 kept its multiply; the zipper permutation added nothing measurable once AES
 rounds did the byte mixing, and was dropped.
@@ -513,3 +526,19 @@ with applications to cryptology. SEA 2010.
 
 [15] J.-P. Aumasson, D. J. Bernstein. SipHash: a fast short-input PRF.
 INDOCRYPT 2012.
+
+[16] R. Benadjila, O. Billet, H. Gilbert, G. Macario-Rat, T. Peyrin,
+M. Robshaw, Y. Seurin. SHA-3 proposal: ECHO. Submission to the NIST SHA-3
+competition, 2009.
+
+[17] S. Kölbl, M. M. Lauridsen, F. Mendel, C. Rechberger. Haraka v2:
+efficient short-input hashing for post-quantum applications. IACR
+Transactions on Symmetric Cryptology 2016(2).
+
+[18] S. Gueron, N. Mouha. Simpira v2: a family of efficient permutations
+using the AES round function. ASIACRYPT 2016.
+
+[19] T. Isobe, R. Ito, F. Liu, K. Minematsu, M. Nakahara, K. Sakamoto,
+R. Shiba. Areion: highly-efficient permutations and its applications to
+hash functions for short input. IACR Transactions on Cryptographic Hardware
+and Embedded Systems 2023(2).
