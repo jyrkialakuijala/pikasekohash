@@ -16,6 +16,19 @@ extern "C" {
 // Key: eight 64-bit lanes (512 bits), or NULL for the all-zero key. The unkeyed hash is
 // the keyed hash with the zero key; there is no domain separation between the two yet.
 
+// Byte forms, independent of the host byte order: a 64-byte key to the eight key words
+// (word i = bytes 8i .. 8i + 7, little-endian), and a digest to its canonical 32 bytes.
+static inline void pikaseko256_key_from_bytes(uint64_t key[8], const uint8_t bytes[64]) {
+  for (int i = 0; i < 8; i++) {
+    uint64_t v = 0;
+    for (int j = 7; j >= 0; j--) v = (v << 8) | bytes[8 * i + j];
+    key[i] = v;
+  }
+}
+static inline void pikaseko256_digest_to_bytes(uint8_t bytes[32], const uint64_t out[4]) {
+  for (int i = 0; i < 32; i++) bytes[i] = (uint8_t)(out[i / 8] >> (8 * (i % 8)));
+}
+
 // AVX-512 implementation (needs AVX512F, AVX512BW and VAES; the caller checks the CPU).
 void pikaseko256(const void* data, size_t len, const uint64_t key[8], uint64_t out[4]);
 void pikaseko256_unkeyed(const void* data, size_t len, uint64_t out[4]);

@@ -13,6 +13,8 @@ changes the output of the function changes the test vectors.
 * Streaming interface: `pikaseko256_init`, `pikaseko256_update`,
   `pikaseko256_final` and their `_portable` versions, sharing one context type.
   Output unchanged.
+* `pikaseko256_key_from_bytes` and `pikaseko256_digest_to_bytes`: byte forms
+  of the key and the digest, independent of the host byte order.
 
 ## 0.0.1 (version 0) - 2026-10-26
 

@@ -135,7 +135,9 @@ pikaseko256_portable(msg, msg_len, key, digest);  // any CPU, same result
 
 Byte order: key word i is bytes 8i .. 8i + 7 of a 64-byte key,
 little-endian. The canonical 32-byte digest is out[0], out[1], out[2], out[3],
-each written little-endian.
+each written little-endian. `pikaseko256_key_from_bytes(key, bytes64)` and
+`pikaseko256_digest_to_bytes(bytes32, out)` (inline, in the header) convert
+on any host.
 
 The functions without suffix need AVX-512F, AVX-512BW and VAES; there is no
 run-time CPU dispatch. The portable functions work everywhere and are

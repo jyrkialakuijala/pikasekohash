@@ -250,6 +250,22 @@ int main(void) {
     fails += !ok;
   }
 #endif
+  // Byte forms: the canonical digest of the empty message (SPEC.md, section 11) and a key.
+  {
+    static const uint8_t want[32] = {0x2d, 0x69, 0x10, 0x38, 0x97, 0xce, 0xe9, 0x4c, 0x6e, 0x1d, 0x9b, 0x66, 0x92, 0xdf, 0x3b, 0x93,
+                                     0x56, 0xc1, 0xac, 0x6d, 0xf9, 0x33, 0x7e, 0x27, 0x24, 0x15, 0x8c, 0xb6, 0x02, 0xa9, 0x8e, 0x9b};
+    uint8_t kb[64], d[32];
+    uint64_t h[4], k[8];
+    pikaseko256_unkeyed_portable("", 0, h);
+    pikaseko256_digest_to_bytes(d, h);
+    int ok = !memcmp(d, want, 32);
+    for (int i = 0; i < 64; i++) kb[i] = (uint8_t)(i % 8 == 0 ? i / 8 + 1 : 0);  // the key 1..8
+    pikaseko256_key_from_bytes(k, kb);
+    ok &= !memcmp(k, key18, sizeof k);
+    printf("byte forms of key and digest: %s\n", ok ? "ok" : "FAIL");
+    fails += !ok;
+  }
+
 #ifndef PIKASEKO256_NO_AVX512
   if (avx) fails += StepsAvxVsPortable();
 #endif
